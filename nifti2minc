@@ -1,0 +1,55 @@
+#! /bin/bash
+# converts minc to nifti
+
+usage ()
+{
+	echo "Usage: $(basename $0) INPUT OUTPUT"
+	echo "INPUT       nifti, i.e. .nii.gz"
+	echo "OUTPUT      any mnc file"
+}
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+INPUT=$1
+OUTPUT=${2%.mnc}.mnc
+[ `imtest $INPUT` = 1 ] || { echo "ERROR: Could not find input file: $INPUT"; exit 1; }
+
+#VERSION=`mincinfo -minc_version $INPUT | grep -o 'Version: [^ ]*' | awk '{print $2}'`
+#INDATATYPE=`mincinfo $INPUT | grep -o 'image: .*' | awk '{print $2,$3}'`
+
+
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+trap "{ rm -rf $TDIR && echo 'cleaned up temp. directory'; exit 255; }" EXIT
+
+fslchfiletype NIFTI $INPUT $TDIR/nii
+
+rm -f $OUTPUT
+nii2mnc $TDIR/nii.nii $OUTPUT >/dev/null
+
+#if [ "$VERSION" -ne 1 ]; then
+#	echo converting to version 1 mnc
+#	mincconvert $INPUT $TDIR/mnc.mnc
+#else
+#	cp $INPUT $TDIR/mnc.mnc
+#fi
+
+#OUTDATATYPE=`mnc2nii -unsigned -short $TDIR/mnc.mnc $TDIR/nii.nii | grep 'datatype_name' | awk '{print $3}' | tr -d \'  2>/dev/null`
+
+#echo "input data type:               $INDATATYPE"
+#echo "intermediate output data type: $OUTDATATYPE"
+
+#fslmaths $TDIR/nii.nii $(remove_ext $OUTPUT) 2> $TDIR/err
+
+#OUTDATATYPE=`fslhd $OUTPUT | grep 'data_type' | awk '{print $2}'`
+
+#echo "final output data type:        $OUTDATATYPE"
+
+#if [ "`wc -l $TDIR/err | awk '{print $1}'`" -gt 1 ]; then
+#	echo
+#	echo "Warnings/Errors during final fslmaths:"; 
+#	echo "##################################################"
+#	cat $TDIR/err;
+#	echo "##################################################"
+#	echo
+#fi
+
