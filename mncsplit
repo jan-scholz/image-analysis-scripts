@@ -1,0 +1,23 @@
+mincsplit ()
+{
+        # mincsplit INPUT.MNC OUTDIR
+        MAX=`expr $(mincinfo -dimlength time $1) - 1`
+        mkdir -p $2
+
+        for i in `seq 0 $MAX`; do
+                mincreshape -2 -quiet -start $i -count 0 -clobber $1 $2/vol`printf "%02i" ${i}`.mnc
+                [ -z "$VERBOSE" ] || echo -n "."
+        done
+        [ -z "$VERBOSE" ] || echo `expr $MAX + 1`
+}
+
+usage ()
+{
+	echo "Usage: `basename $0`: IN OUTDIR"
+}
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+mincsplit $1 $2
+
+
