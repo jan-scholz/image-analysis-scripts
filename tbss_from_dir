@@ -1,0 +1,90 @@
+#! /bin/bash
+# prepares tbss directory from template2 run
+
+usage ()
+{
+	echo "Usage: `basename $0` -i ALL_FA -o OUTDIR -m MEAN_FA_MASK [-t THRESH] [DESIGN.CON DESIGN.MAT]"
+	echo "  -i ALL_FA         4D file containing all aligned images"
+	echo "  -o OUTDIR         output directory for TBSS analysis"
+	echo "  -m MEAN_FA_MASK   mask"
+	echo "  -t THRESH         TBSS skeleton threshold"
+	echo "  -w WARPS          import warps (NOT IMPLEMENTED)"
+}
+
+
+while getopts i:o:m:t:w:v opt
+do
+    case "$opt" in
+      i)      ALL="$OPTARG";;
+      o)   OUTDIR="$OPTARG";;
+      m)     MASK="$OPTARG";;
+      t)   THRESH="$OPTARG";;
+	  w)    WARPS="$OPTARG";;
+	  v)  VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$ALL" -o -z "$OUTDIR" -o -z "$MASK" ] && { usage; exit 1; }
+
+
+INDIR=`dirname $ALL`
+[ -z "$THRESH" ] && { THRESH=0.35; }
+
+
+[ -z "$VERBOSE" ] || echo "setting up output directory $OUTDIR"
+mkdir -p $OUTDIR/{FA,stats}
+imcp $ALL $OUTDIR/stats/all_FA
+
+if [ "`imtest $MASK`" = 1 ]; then
+	[ -z "$VERBOSE" ] || echo "using mask $MASK"
+	imcp $MASK $OUTDIR/stats/mean_FA_mask
+	fslswapdim $OUTDIR/stats/mean_FA_mask -x y z $OUTDIR/stats/mean_FA_mask_flip > /dev/null
+else
+	echo "Warning: could not find mask \"$MASK\", setting mask to the whole volume"
+	fslmaths $ALL -Tmean -mul 0 -add $OUTDIR/stats/mean_FA_mask
+fi
+
+fslmaths $OUTDIR/stats/all_FA -mas   $OUTDIR/stats/mean_FA_mask $OUTDIR/stats/all_FA
+fslmaths $OUTDIR/stats/all_FA -Tmean $OUTDIR/stats/mean_FA
+
+#fslsplit $OUTDIR/stats/all_FA $OUTDIR/vol -t
+## rename
+#i=0
+#for f in $INDIR/*_FA_to_target_warp.nii.gz; do
+#	immv $OUTDIR/`printf "vol%04g" $i` $OUTDIR/FA/`basename ${f%_to_target_warp.*}`
+#	imcp $f $OUTDIR/FA/
+#	let i++
+#done
+
+
+
+# tbss
+cd $OUTDIR/stats
+
+# tbss skeleton
+tbss_skeleton -i mean_FA -o mean_FA_skeleton
+
+
+[ -z "$VERBOSE" ] || echo "creating skeleton mask using threshold \"$THRESH\""
+echo $THRESH > thresh.txt
+fslmaths mean_FA_skeleton -thr $THRESH -bin mean_FA_skeleton_mask
+
+[ -z "$VERBOSE" ] || echo "creating skeleton distancemap (for use in projection search)"
+fslmaths mean_FA_mask -mul -1 -add 1 -add mean_FA_skeleton_mask mean_FA_skeleton_mask_dst
+distancemap -i mean_FA_skeleton_mask_dst -o mean_FA_skeleton_mask_dst
+
+[ -z "$VERBOSE" ] || echo "projecting all FA data onto skeleton"
+fslmaths mean_FA -mul 0 empty_mask
+tbss_skeleton -i mean_FA -p $THRESH mean_FA_skeleton_mask_dst empty_mask all_FA all_FA_skeletonised
+
+( cd ../..; cp $@ $OUTDIR/stats; )
+
+echo "randomise -i $OUTDIR/stats/all_FA -o $OUTDIR/stats/`basename ${1%.*}` -m $OUTDIR/stats/mean_FA_mask_flip -d $2 -t $1 -n 2000 -x"
+#echo "randomise -i all_FA_skeletonised -o tbss -m mean_FA_skeleton_mask -d design.mat -t design.con -n 500 --T2 -V"
+
+cd -
+
+exit 0
+
