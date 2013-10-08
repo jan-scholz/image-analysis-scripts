@@ -1,0 +1,377 @@
+#! /bin/bash
+#
+# TODO
+#   source /etc/profile.d/mice_profile.sh
+#   record uncorrected FA lateralization
+#   record uncorrected raw values
+#   record corrected raw values
+#   use bvals file for b0 determination
+#  save corrected file in the end
+#  leave split directories only with debug option -x
+#  use fsl only if installed or requested
+#
+# diffbias -v -i water_c1.mnc -m water_c1_mask.mnc -b water_c1_bmap.mnc
+# diffbias -v -c water_c1_bmap.mnc  -d ../neuroligand/foo/Data_05.mnc 
+
+
+usage () 
+{
+	echo "Usage: `basename $0` [-i ISO] [-d DATA]"
+	echo
+	echo "  -i ISO       estimate diffusion gradient bias field from isotropic medium"
+	echo "  -m MASK      mask to restrict spline fit of the interpolation"
+	echo "  -d DATA      correct diffusion data (same order and number of images as ISO)"
+	echo "               requires mask named as DATA_mask.mnc"
+	echo "               saves to DATA_corr.mnc"
+	echo "  -o OUT       output corrected data (add .mnc or .nii.gz)"
+	echo
+	echo "  -b B-OUT     save b-maps for bias correction after estimation from ISO"
+	echo "  -c BMAP      load b-maps for bias correction without estimation from ISO"
+	echo
+	echo "  -s S0DIST    [5 mm] smoothing distance factor for B0 interpolation"
+	echo "  -t B-DIST    [5 mm] smoothing distance factor for DW inhomogeneity interpolation"
+	echo
+	echo "  -x DEBUGDIR  debug directory, saves correction statistics"
+	echo "               the following files will be used to calculate:"
+	echo "                 mask.mnc:  whole brain signal un/corrected, otherwise whole volume"
+	echo "                 left.mnc:  average FA"
+	echo "                 right.mnc: average FA"
+	echo
+	echo "EXAMPLE"
+	echo " diffbias -v -i water_c1.mnc -m water_c1_mask.mnc -b water_c1_bmap.mnc"
+	echo " diffbias -v -c water_c1_bmap.mnc -d Data_05.mnc -o Data_05_corr.mnc"
+}
+
+nifti ()
+{
+	mnc2nii ${1%.mnc}.mnc $TDIR/tmp.nii &> /dev/null
+	fslchfiletype NIFTI_GZ $TDIR/tmp $2
+	imrm $TDIR/tmp
+}
+
+minc ()
+{
+	fslchfiletype NIFTI $1 $TDIR/tmp
+	nii2mnc $TDIR/tmp.nii $TDIR/tmp.mnc &> /dev/null
+	mincconvert -2 -clobber $TDIR/tmp.mnc ${2%.mnc}.mnc
+	rm $TDIR/tmp.{mnc,nii}
+}
+
+mincsplit ()
+{
+	# mincsplit INPUT.MNC OUTDIR
+	MAX=`expr $(mincinfo -dimlength time $1) - 1`
+	mkdir -p $2
+
+	for i in `seq 0 $MAX`; do
+		mincreshape -2 -quiet -start $i -count 0 -clobber $1 $2/vol`printf "%02i" ${i}`.mnc
+		[ -z "$VERBOSE" ] || echo -n "."
+	done
+	[ -z "$VERBOSE" ] || echo `expr $MAX + 1`
+}
+
+check_n_split ()
+{
+	BASE=${1%.mnc}
+	mincinfo -dimnames $1 | grep time > /dev/null || { echo "ERROR: file \"$BASE\" has no time dimension"; exit 1; }
+
+	# split data file
+	if [ -d $BASE ]; then	
+		N=`ls $BASE 2>/dev/null | wc -l`
+		M=`mincinfo -dimlength time $1`
+
+		if [ $N -eq $M ]; then
+			[ -z "$VERBOSE" ] || echo "found previously split data \"$BASE/\""
+		else
+			echo "ERROR: found previously split data \"$BASE\", with non-matching volume numbers" > /dev/stderr
+			echo "       please delete" > /dev/stderr
+			exit 1
+		fi
+	else
+		mkdir -p $BASE
+		[ -z "$VERBOSE" ] || echo "splitting data \"$1\""
+		echo mincsplit $1 $BASE
+		mincsplit $1 $BASE
+	fi
+}
+
+latstats ()
+{
+	MASK1=$DEBUGDIR/left.mnc
+	MASK2=$DEBUGDIR/right.mnc
+
+	[ -f $MASK1 -a -f $MASK2 ] || return
+
+	minc $TDIR/corr/nifti/dti_FA $TDIR/corr/dti_FA.mnc
+	LEFT=` mincstats -quiet -mask $MASK1 -mask_binvalue 1 -mean $TDIR/corr/dti_FA.mnc`
+	RIGHT=`mincstats -quiet -mask $MASK2 -mask_binvalue 1 -mean $TDIR/corr/dti_FA.mnc`
+	printf "%14.6e %14.6e %14.6e\n" $LEFT $RIGHT `echo $LEFT - $RIGHT | bc -l` >> $LOG
+}
+
+b_estimate ()
+{
+	###############################################################################
+	# -i ISO (estimate diffusion gradient bias fields from isotropic medium)
+	###############################################################################
+	#  isotropic ADC, water (20C) -1.8e-3
+	ISOADC=-1.8e-3
+
+	ISODIR=${ISO%.mnc}
+	check_n_split $ISO
+
+	mkdir -p $TDIR/{iso,b}
+
+	# mean S0 water, (non-diffusion-weighted signal)
+	minccalc -2 -quiet -clobber -expression "avg(A)" $ISODIR/vol0[0-$(($NB-1))].mnc $TDIR/iso/S0.mnc
+
+	# S0 water fitted, (non-diffusion-weighted signal)
+	spline_smooth -clobber -extrapolate -mask $MASK -distance $S0DIST $TDIR/iso/S0.mnc $TDIR/iso/S0_est.mnc
+
+	[ -z "$VERBOSE" ] || echo "creating b-maps"
+	N=`mincinfo -dimlength time $ISO`
+	for ((i=0;i<$N;i++)); do
+		j=`printf "%02g" ${i}`
+
+		# non-diffusion-weighted volumes are set to 1
+		if [ $i -lt $NB ]; then
+			minccalc -float -2 -quiet -clobber -expression "A[0]*0+1" $ISODIR/vol${j}.mnc $TDIR/b/vol${j}.mnc
+			[ -z "$VERBOSE" ] || echo -n "o"
+			continue
+		fi
+
+		# S iso, fit bias for each diffusion-weighted volume, distance factor (dist)
+		spline_smooth -clobber -extrapolate -mask $MASK -distance $DIST $ISODIR/vol${j}.mnc $TDIR/iso/vol${j}_est.mnc
+
+		# b water, calculate b-map for every diffusion-weighted volume
+		minccalc -float -2 -quiet -clobber -expression "log(A[0]/A[1])/${ISOADC}" $TDIR/iso/vol${j}_est.mnc $TDIR/iso/S0_est.mnc $TDIR/b/vol${j}.mnc
+
+		[ -z "$VERBOSE" ] || echo -n "."
+	done
+	[ -z "$VERBOSE" ] || echo $i
+
+	mincconcat -2 -quiet -clobber -concat_dimension time $TDIR/b/vol??.mnc $TDIR/b.mnc && BMAP=$TDIR/b.mnc
+	#mkdir -p $TDIR/bmap; mv $TDIR/b/vol??.mnc $TDIR/bmap/
+
+	# save b-maps
+	if [ ! -z "$BOUT" ]; then
+		EXT="${BOUT#`remove_ext $BOUT`}"
+		if [  $EXT = ".nii.gz" ]; then
+			nifti $BMAP $BOUT
+		else
+			cp $BMAP $BOUT
+		fi
+		echo "saved b-map to \"$BOUT\""
+	fi
+}
+
+correct ()
+{
+	###############################################################################
+	# -d DATA (apply bias fields to correct raw data)
+	###############################################################################
+	newb=1917
+	[ -z "$DEBUGDIR" ] || { LOG=$DEBUGDIR/log_${S0DIST}_${DIST}.txt; >$LOG; }
+
+	[ -f "$DATA" ] || { echo "ERROR: Could not open input file \"$DATA\"" > /dev/stderr; exit 1; }
+	[ -f "$BMAP" ] || { echo "ERROR: b-map \"$BMAP\" not found" > /dev/stderr; exit 1; }
+
+	DATADIR=${DATA%.mnc}
+	check_n_split $DATA
+
+	BMAPDIR=${BMAP%.mnc}
+	check_n_split $BMAP
+
+	mkdir -p $TDIR/{bres,corr/nifti}
+
+	MASK=${DATA%.mnc}_mask.mnc
+	if [ -f ${MASK} ]; then
+		cp $MASK $TDIR/corr/mask.mnc
+		[ -z "$VERBOSE" ] || echo "found brain mask \"$MASK\""
+	else
+		echo "Warning: mask \"$MASK\" not found, set mask to whole volume" > /dev/stderr
+		minccalc -2 -quiet -clobber -expression "A[0]*0+1" $DATADIR/vol00.mnc $TDIR/corr/mask.mnc
+	fi
+	MASK=$TDIR/corr/mask.mnc
+
+	# data S0 
+	minccalc -2 -quiet -clobber -expression "avg(A)" $DATADIR/vol0[0-$(($NB-1))].mnc $TDIR/corr/S0.mnc
+
+	# apply b-map
+	N=`mincinfo -dimlength time $DATA`
+	[ -z "$VERBOSE" ] || echo "applying b-map"
+
+	for ((i=0;i<$N;i++)); do
+		j=`printf "%02g" $i`
+
+		# just copy non-diffusion-weighted volumes
+		if [ $i -lt $NB ]; then
+			cp $DATADIR/vol${j}.mnc $TDIR/corr/vol${j}.mnc
+			[ -z "$VERBOSE" ] || echo -n "o"
+			continue
+		fi
+
+		# resample b-maps
+		mincresample -float -2 -quiet -clobber -like $DATADIR/vol${j}.mnc $BMAPDIR/vol${j}.mnc $TDIR/bres/vol${j}.mnc
+
+		[ -z "$DEBUGDIR" ] || UNCORR=`mincstats -quiet -mask ${MASK} -mask_binvalue 1 -mean $DATADIR/vol${j}.mnc`
+
+		minccalc -2 -quiet -clobber -expression "A[0]*(A[1]/A[0])^(${newb}/A[2])" $TDIR/corr/S0.mnc $DATADIR/vol${j}.mnc $TDIR/bres/vol${j}.mnc $TDIR/corr/vol${j}.mnc
+
+		if [ ! -z "$DEBUGDIR" ]; then
+			CORR=`mincstats -quiet -mask ${MASK} -mask_binvalue 1 -mean $TDIR/corr/vol${j}.mnc`
+			printf "%14.6e %14.6e %14.6e\n" $UNCORR $CORR `echo $CORR - $UNCORR | bc -l` >> $LOG
+		fi
+
+		[ -z "$VERBOSE" ] || echo -n "."
+	done
+	[ -z "$VERBOSE" ] || echo `expr $i`
+
+	# corrected data
+	mincconcat -2 -quiet -clobber -concat_dimension time $TDIR/corr/vol* $TDIR/corr/data.mnc
+
+	if [ ! -z "$DEBUGDIR" ]; then
+		nifti $TDIR/corr/data.mnc $TDIR/corr/nifti/data
+		nifti $MASK $TDIR/corr/nifti/`basename ${MASK%.mnc}`
+		fslmaths $TDIR/corr/nifti/`basename ${MASK%.mnc}` -bin $TDIR/corr/nifti/`basename ${MASK%.mnc}`
+
+		# dtifit
+		[ -z "$VERBOSE" ] || echo "running dtifit"
+		dtifit -k $TDIR/corr/nifti/data -m $TDIR/corr/nifti/`basename ${MASK%.mnc}` -o $TDIR/corr/nifti/dti -r `dirname $DATA`/bvecs -b `dirname $DATA`/bvals > /dev/null
+
+		imcp $TDIR/corr/nifti/dti_FA $DEBUGDIR/dti_FA_${S0DIST}_${DIST}
+		latstats
+	fi
+
+	# save corrected data
+	if [ ! -z "$OUT" ]; then
+		EXT="${OUT#`remove_ext $OUT`}"
+		if [  $EXT = ".nii.gz" ]; then
+			nifti $TDIR/corr/data.mnc $OUT
+		else
+			cp $TDIR/corr/data.mnc $OUT
+		fi
+		echo "saved corrected data to \"$OUT\""
+	fi
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+# number of non-diffusion-weighted images at the beginning
+NB=5
+
+# b-value of non-diffusion-weighted images (NOT IMPLEMENTED!!!)
+B0=0
+
+while getopts i:m:d:o:b:c:s:t:x:v opt
+do
+    case "$opt" in
+      i)      ISO="$OPTARG";;
+      m)     MASK="$OPTARG";;
+      d)     DATA="$OPTARG";;
+      o)      OUT="$OPTARG";;
+      b)     BOUT="$OPTARG";;
+      c)     BMAP="$OPTARG";;
+
+      s)   S0DIST="$OPTARG";;
+      t)     DIST="$OPTARG";;
+
+      x) DEBUGDIR="$OPTARG";;
+      v)  VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$ISO" -a -z "$DATA" ] && { usage; exit 1; }
+
+TDIR=$TMPDIR/$USER/$$
+#TDIR=$TMPDIR/$USER/test
+mkdir -p $TDIR || { echo "ERROR: Could not create temp. dir. \$TDIR" > /dev/stderr; exit 1; }
+trap "{ rm -fr $TDIR; exit 0; }" EXIT
+#trap "{ echo 'cleaned up temp. directory'; exit 255; }" EXIT
+
+[ -z "$S0DIST" ] && S0DIST=5.5
+[ -z "$DIST" ]   &&   DIST=5.5
+[ -z "$VERBOSE" ] || echo "S0DIST $S0DIST DIST $DIST"
+
+###############################################################################
+# ESTIMATION
+###############################################################################
+
+if [ ! -z "$ISO" ]; then
+	[ -f "$MASK" ] || { echo "ERROR: MASK file \"$MASK\" not found" > /dev/stderr; exit 1; }
+
+	b_estimate
+fi
+
+
+###############################################################################
+# CORRECTION
+###############################################################################
+
+if [ ! -z "$DATA" ]; then
+	[ ! -f "$ISO" -a -z "$BMAP" ] && { echo "ERROR: Correction requires estimation from ISO or a BMAP." > /dev/stderr; exit 1; }
+
+	correct
+fi
+
+
+exit 0
+
+
+
+
+
+
+
+
+
+###############################################################################
+# creating masks
+###############################################################################
+
+# number of b0 images at the beginning
+NB=5
+# a mask excluding the voxels at the edge of the image volume
+BBOX=bbox.mnc
+thr=(260 255 185)
+
+for n in 1 2 3; do
+	m=$((n-1))
+	t=`echo "${thr[$m]} * 0.7" | bc -l`
+
+	minccalc -2 -quiet -clobber -expression "avg(A)>${t}" water_c${n}/vol0[0-$((NB))].mnc water_c${n}_mask.mnc
+	minccalc -2 -quiet -clobber -nocheck_dimensions -expression "A[0]*A[1]" water_c${n}_mask.mnc $BBOX tmp.mnc
+	mincmorph -clobber -successive EEEEE tmp.mnc water_c${n}_mask.mnc
+	rm tmp.mnc
+done
+
+
+###############################################################################
+
+#matlab
+mat -r "d=dir('log_*'); for k=1:length(d), fprintf('%s\n',d(k).name); tmp=load(strcat('',d(k).name)); delta(:,:,k)=tmp(:,1:30); lat(:,k)=tmp(:,31); end "
+
+
+# display histograms of b-maps averaged across masks
+HEAD=`printf "S0DIST=%05.2f DIST:%05.2f " $S0DIST $DIST`
+TAIL=`matlab -nosplash -nodesktop -r "t=load('"$LOG"'); ss = reshape(t(:,3),30,3); std(log(ss)), exit" | tail -n3 | head -n1`
+
+
+d=dir('log_*');
+
+for k=1:length(d),
+	fprintf('%s\n',d(k).name)
+	t{k}=load(strcat('',d(k).name));
+	% vol,coil,meas
+	r = reshape(t{k},30,3,3);
+	plot(r(:,:,2)); hold on; plot(r(:,:,3),'o'); axis([1 30 2 10]); hold off
+	s(k,:) = std(r(:,:,3));
+	pause
+end
+
+
+
+
