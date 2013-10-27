@@ -1,0 +1,48 @@
+#! /bin/bash
+# blurs all files and stores them in a direcory
+#
+# copyright 2011 jan.scholz@phenogenomics.ca
+# 2011-08-03
+
+
+usage () {
+	echo "Usage: `basename $0` [-f FWHM] [-o OUTDIR] MINCFILE.."
+	echo "  -f FWHM    smoothing kernal (default: 0.3)"
+	echo "  -o OUTDIR  output direcory (default: directory of first input file with FWHM appended "
+	echo "  MINCFILE   MINC format files to be blurred"
+	echo ""
+}
+
+while getopts f:o:v opt
+do
+    case "$opt" in
+      f)     FWHM="$OPTARG";;
+      o)   OUTDIR="$OPTARG";;
+      v)  VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+FWHM=${FWHM:-0.3}
+[ -z "$VERBOSE" ] || echo "using smoothing kernel $FWHM"
+
+TMP=`python -c 'from os.path import *; print dirname(realpath("'$1'")) + "_fwhm'${FWHM/./-}'";'`
+OUTDIR=${OUTDIR:-$TMP}
+mkdir -p $VERBOSE $OUTDIR
+
+
+TDIR=$TMPDIR/$USER/$$
+mkdir -p $TDIR || { echo "ERROR: Could not create temp. dir. \$TDIR" > /dev/stderr; exit 1; }
+trap "{ rm -fr $TDIR; exit 255; }" EXIT
+
+
+for f in $@; do
+	[ -f $f ] || { echo "ERROR: Could not find file \"$f\""; exit 1; }
+	mincblur -clobber -quiet -fwhm $FWHM $f $TDIR/`basename ${f%.mnc}` > /dev/null
+	mv $TDIR/`basename ${f%.mnc}`_blur.mnc $OUTDIR/`basename $f`
+	[ -z "$VERBOSE" ] || echo processed $f
+done
+
