@@ -1,0 +1,94 @@
+#! /bin/bash
+# converts minc to nifti
+
+usage ()
+{
+	echo "Usage: $(basename $0) INPUT OUTPUT"
+	echo "  Converts between MINC and NIFTI format"
+	echo "  INPUT and OUTPUT are .mnc and .nii.gz files"
+	echo
+}
+
+minctest ()
+{
+	mincinfo $1 > /dev/null || { echo "ERROR: Could not find input file: $1"; exit 1; }
+}
+
+filetype ()
+{
+	case `file -b $1` in
+		"NetCDF Data Format data") echo "minc 1";;
+		"Hierarchical Data Format (version 5) data") echo "minc 2";;
+		"gzip compressed data"*) [ 1 = "`imtest $1`" ] && echo "nifti `fslhd $1 | grep file_code | awk '{print $2}'`";; 
+		*) echo "ERROR: cannot open file $1" > /dev/stderr; exit 1;;
+	esac
+}
+
+
+###############################################################################
+# MAIN                                                                        #
+###############################################################################
+while getopts v opt
+do
+    case "$opt" in
+      v) VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+
+FILETYPE=(`filetype $1`)
+echo FILETYPE $FILETYPE
+
+
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
+
+
+#[ "$(ls -A $dir)" ] || echo dir empty
+
+
+if [ nifti = "${FILETYPE[0]}" ]; then
+
+	echo nifti-minc
+
+	INPUT=`remove_ext $1`
+	OUTPUT=${2%.mnc}.mnc
+
+	fslchfiletype NIFTI $INPUT $TDIR/nii
+	nii2mnc $TDIR/nii.nii $TDIR/minc.mnc 2> /dev/null
+
+	[ -f $TDIR/minc.mnc ] || { echo "ERROR: conversion did not work"; exit 1; }
+	mkdir -p `dirname $OUTPUT`
+	cp $TDIR/minc.mnc $OUTPUT
+
+elif [ minc = "${FILETYPE[0]}" ]; then
+
+	echo minc-nifti
+
+	INPUT=$1
+	OUTPUT=`remove_ext $2`
+
+	minctest $INPUT
+
+	mincresample -2 -quiet -clobber  -keep_real_range -float $INPUT $TDIR/FLOAT.mnc
+	mnc2nii $TDIR/FLOAT.mnc $TDIR/nii.nii 2> /dev/null
+	fslchfiletype NIFTI_GZ $TDIR/nii.nii || rm $TDIR/nii.nii
+	rm -f $TDIR/FLOAT.mnc
+
+	[ -f $TDIR/nii.nii.gz ] || { echo "ERROR: conversion did not work"; exit 1; }
+	mkdir -p `dirname $OUTPUT`
+	imcp $TDIR/nii.nii.gz $OUTPUT
+
+else
+
+	exit 1
+
+fi
+
+rm -rf $TDIR
+exit 0
+
