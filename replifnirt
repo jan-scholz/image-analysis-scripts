@@ -1,0 +1,168 @@
+#! /bin/bash
+#
+# REPLICATE ANTS TRANSFORMATIONS WITH FNIRT
+# requires files that are found in minctracc or mincANTS direcotry
+#
+# copyright Jan.Scholz@phenogenomics.ca 2011
+# 2011-08-22
+
+shopt -s expand_aliases
+alias parallel='/micehome/jlerch/linux-experimental/bin/parallel'
+
+FLIRTOPS="-nosearch"
+
+usage () {
+	echo "Usage: `basename $0` -a REFMASK_NIFTI -i \"IN_NIFTI..\" -r \"REF_MINC..\""
+	echo "  -i IN_NIFTI..         input images"
+	echo "  -r REF_MINC..         references"
+	echo "  -a resampled atlas mask (dilated)"
+	echo "  -n non-linear alignment only"
+	echo
+	echo "  -x debug"
+	#echo "  -o OUTDIR             output directory"
+	#echo "  -m MASKS_NIFTI..      nodif brain masks"
+	echo
+	echo "IN, REF, need to have the same number of elements"
+}
+
+init_rotate ()
+{
+cat <<EOF >> $1
+-1           -8.74228e-08  0   13.8704  
+8.74228e-08  -1            0   21.8697  
+0             0            1   -3
+0             0            0    1  
+EOF
+}
+
+schedule ()
+{
+cat <<EOF >> $1
+--applyrefmask=0,1,1
+--applyinmask=0,1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1,1
+--miter=10,10,10
+--infwhm=0.3,0.1,0.0
+--reffwhm=0.3,0.1,0.0
+--lambda=2.0,1.6,1.2
+--estint=1,0,0
+--warpres=0.2,0.2,0.2
+--ssqlambda=1
+--regmod=bending_energy
+#--intmod=none
+--intmod=global_linear
+#--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+--splineorder=3
+EOF
+}
+
+schedule_test ()
+{
+cat <<EOF >> $1
+--applyrefmask=0,1
+--applyinmask=0,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1
+--miter=3,3
+--infwhm=0.3,0.1
+--reffwhm=0.3,0.1
+--lambda=2.0,1.6
+--estint=1,0
+--warpres=0.2,0.2,0.2
+--ssqlambda=1
+--regmod=bending_energy
+#--intmod=none
+--intmod=global_linear
+#--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+--splineorder=3
+EOF
+}
+
+
+
+
+###############################################################################
+# MAIN                                                                        #
+###############################################################################
+
+QUEUE=false
+while getopts i:r:o:m:a:nxv opt
+do
+    case "$opt" in
+      i)  INNIFTI="$OPTARG";;
+      r)  REFMINC="$OPTARG";;
+      #o)   OUTDIR="$OPTARG";;
+      #m)    MASKS="$OPTARG";;
+      a) ATLASMASK="$OPTARG";;
+	  n)     NLIN=true;;
+	  x)    DEBUG=true;;
+	  v)  VERBOSE=true;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+INNIFTI=($INNIFTI)
+REFMINC=($REFMINC)
+N=${#INNIFTI[*]}
+M=${#REFMINC[*]}
+
+[ "$N" -lt 1 ] && { usage; exit 1; }
+[ $N -ne $M ] && { usage; echo "ERROR: unequal numbers (in: $N, ref: $M)"; exit 1; }
+[ -f "$ATLASMASK" ] || { echo "ERROR: atlas mask not found/specified"; exit 1; }
+
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
+
+
+INITMAT=$TDIR/init.mat
+init_rotate $INITMAT
+
+# convert REF to NIFTI and create 180-deg init.mat
+for((i=0;i<$N;i++)); do
+	IN=`imglob ${INNIFTI[$i]}`
+	REF=$TDIR/`printf "%02i_ref" $i`
+	OUTBASE=${IN}_to_nlin
+	mncconvert ${REFMINC[$i]} $REF
+	[ -f "${OUTBASE}_init.mat" ] || cp -v $TDIR/init.mat ${OUTBASE}_init.mat
+done
+
+
+schedule_test $TDIR/schedule.cnf
+
+for((i=0;i<$N;i++)); do
+	IN=`imglob ${INNIFTI[$i]}`
+	OUTBASE=${IN}_to_nlin
+	REF=$TDIR/`printf "%02i_ref" $i`
+	MASK=`imglob $(dirname $IN)/nodif_brain_mask`
+
+	[ -z "$NLIN" ] && echo -n "flirt -in $IN -ref $REF -init ${OUTBASE}_init.mat -omat ${OUTBASE}_init.mat -out ${OUTBASE}_init $FLIRTOPS;"
+	echo "fnirt --in=$IN --ref=$REF --inmask=$MASK --refmask=$ATLASMASK --aff=${OUTBASE}_init.mat --config=$TDIR/schedule.cnf --logout=/dev/null -v --cout=${OUTBASE}_warp --iout=${OUTBASE} --jout=${OUTBASE}_JAC > ${OUTBASE}.log"
+
+	IMAGES="$IMAGES $REF $OUTBASE"
+done | parallel -j2 -v
+
+[ -z "$DEBUG" ] || { fslmerge -t all_replfnirt $IMAGES && echo "saved debug info to all_replfnirt"; }
+
+rm -rf $TDIR
+exit 0
+
+
+# get mask
+#mincmorph -clobber -successive 'B[0.5:999]DDDDDD' ../../reg/nlig_new_resampled_atlas/resampled_atlas.mnc mask_new_dil.mnc
+
