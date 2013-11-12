@@ -1,0 +1,38 @@
+#! /bin/bash
+# fixes fnirt bug
+
+
+usage ()
+{
+	echo "Usage: `basename $0` AFFDIR WARPDIR"
+}
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+AFFDIR=${1%/}
+WARPDIR=${2%/}
+
+
+for m in $AFFDIR/*_to_target.mat; do
+	AFF="$AFF $m"
+done
+
+for w in `imglob $WARPDIR/*_to_target_init_warp.nii.gz`; do
+	WARP="$WARP $w"
+done
+
+AFF=($AFF)
+WARP=($WARP)
+
+N=${#AFF[*]}
+M=${#WARP[*]}
+
+[ $N -ne $M ] && { echo "ERROR: unequal numbers for affine ($N) and warps ($M)"; exit 1; }
+
+
+for ((i=0;i<$N;i++)); do
+	echo "immv ${WARP[$i]} ${WARP[$i]}_orig; convertwarp --premat=${AFF[$i]} -w ${WARP[$i]}_orig -r $WARPDIR/template -o ${WARP[$i]}"
+done
+
+
