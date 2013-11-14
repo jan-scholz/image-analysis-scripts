@@ -1,0 +1,53 @@
+#! /bin/bash
+# apply template2 transformations to other modalities
+#
+# applytemplate -o foo -O mean_FA -i NL02b m??_corr_FA.nii.gz
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) -i INDIR -o OUTDIR FILES.."
+	echo
+}
+
+
+while getopts i:r:o:O: opt
+do
+    case "$opt" in
+      i)    INDIR="$OPTARG";;
+      r)      REF="$OPTARG";;
+      o)   OUTDIR="${OPTARG%/}";;
+	  O)  AVERAGE="$OPTARG";;
+	  v)  VERBOSE=true;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+INFILES=($@)
+WARPS=(`imglob $INDIR/*_to_target_warp.nii.gz`)
+N=${#INFILES[*]}
+M=${#WARPS[*]}
+[ $N -ne $M ] && { echo "ERROR: could not find as many INFILES ($N) as WARPS ($M) in $INDIR"; exit 1; }
+
+[ -z "$OUTDIR" ] && { usage; echo "ERROR: no OUTDIR"; exit 1; }
+[ "" = "$OUTDIR" ] && mkdir -p $OUTDIR
+
+[ -z "$REF" ] && REF=$INDIR/target
+[ `imtest $REF` = 0 ] && { echo "ERROR: could not find reference image $REF"; exit 1; }
+REF=`imglob $REF`
+
+
+for ((i=0;i<$N;i++)); do
+	IN=`imglob ${INFILES[$i]}`
+	OUT=$OUTDIR/`basename $IN`_to_`basename $REF`
+	echo applywarp -i $IN -r $REF -w ${WARPS[$i]} -o $OUT
+	OUTFILES="$OUTFILES $OUT"
+done
+
+echo fslmerge -t $OUTDIR/all $OUTFILES
+[ -z "$AVERAGE" ] || echo fslmaths $OUTDIR/all -Tmean $OUTDIR/$AVERAGE
+
+
