@@ -1,0 +1,58 @@
+#! /bin/bash
+# create table for R with filenames
+#
+# rtable -i ../evs.txt -c "1 2 4 7 8" rot??_FA.mnc
+
+usage () 
+{
+	echo "Usage: `basename $0` -i EVS -c COLUMN(S) FILENAMES"
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+while getopts i:c:v opt
+do
+    case "$opt" in
+      i)     EVS="$OPTARG";;
+      c)    COLS="$OPTARG";;
+      v) VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+[ -z "$EVS"  ] && { echo "ERROR: EVS not defined" > /dev/stderr; exit 1; }
+[ -z "$COLS" ] && { echo "ERROR: COLUMNS not defined" > /dev/stderr; exit 1; }
+[ -f "$EVS"  ] || { echo "ERROR: Could not find EV file \"$EVS\"." > /dev/stderr; exit 1; }
+
+NFILES=$#
+NCOLS=`sed -e '/^#/d' -e '/^$/d' $EVS | wc -l`
+[ "$NFILES" -ne "$NCOLS" ] && { echo "ERROR: Number of files ($NFILES) is not the same as the number of rows ($NCOLS)" > /dev/stderr; exit 1; }
+
+
+i=1
+sed -e 's/^#//' -e '/^$/d' $EVS | while read LINE; do
+	j=1
+	for c in $COLS; do
+		e=`echo $LINE | awk "{print \\$$c}"`
+		if [ "$i" -eq 1 ]; then
+			[ "$j" -eq 1 ] && { echo -n "\"filename\" "; }
+			echo -n "\"`echo -n $e | tr -d '"'`\" "
+		else
+			[ "$j" -eq 1 ] && { echo -n "$1 "; shift 1; }
+			echo -n "$e "
+		fi
+	let j++
+	done
+	echo
+	let i++
+done
+
+
+
+
