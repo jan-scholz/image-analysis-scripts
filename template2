@@ -1,0 +1,533 @@
+#!/bin/bash
+# creates a template
+#
+# Modified at MICe
+# 2011-03-17
+#
+# TODO
+#   - retrieve bias field initialization
+#   - use template from init directory automatically as ref
+#	- backproject target masks to individuals with diliniation?
+#
+# run parallel stage on queue
+#   qsub runmain -l nodes=1:ppn=8,walltime=1:00:00 -v INFILE=/home/jscholz/scratch/nifti/template/L90/commands-main
+#
+#template2 -s  6DOF -o  6DOFa -n template130 -r template130    m??_dti_S0.nii.gz
+#template2 -s  6DOF -o  6DOFb -n template130 -r 6DOFa/template m??_dti_S0.nii.gz
+#template2 -s 12DOF -o 12DOFa -n template130 -r 6DOFb/template m??_dti_S0.nii.gz
+#template2 -v -s NL01 -i 12DOFa/ -o NL01a -n template130 -r 12DOFa/template m??_dti_S0.nii.gz
+#template2 -v -s NL01 -i NL01a -o NL01b -n template130 -r NL01a/template m??_dti_S0.nii.gz
+##template2 -v -s NL01 -i NL01b -o NL01c -n template130 -r NL01b/template m??_dti_S0.nii.gz
+#template2 -v -s NL02 -i NL01b -o NL02a -n template130 -r NL01b/template m??_dti_S0.nii.gz
+#template2 -v -s NL02 -i NL02a -o NL02b -n template130 -r NL02a/template m??_dti_S0.nii.gz
+
+# template2 -v -s NL03 -m temp2temp2 -i NL02b -o NL03a -n template130 -r NL02b/template m??_dti_S0.nii.gz
+
+
+
+LIN=; NLIN=
+SCHEDFILE=
+NUDGEREF=; NUDGESCHED=temp2temp;
+CMNDBASE=
+VERBOSE=
+
+### USAGE #####################################################################
+usage ()
+{
+	echo "Usage: $(basename $0) -s SCHEDULE [-r REFERENCE] -o OUTDIR FILES"
+	echo
+	echo "  -l             list available schedules"
+	echo
+	echo "  -s SCHEDULE    registration schedules, -l shows available ones"
+	echo
+	echo "  -r REFERENCE   use this image as registration target (default: first FILE)"
+	echo "                 REFERENCE will not be included in the average"
+	echo
+	echo "  -n NUDGEREF    align template to NUDGEREF (default: REFERENCE)"
+	echo "                 (NUDGEREF_mask is copied to template_mask)"
+	echo
+	echo "  -m NUDGESCHED  use this schedule for nudging (default: temp2temp)"
+	echo
+	echo "  -b             (works only for affine schedules) back-project NUDGEREF_MASK to native space (FILES)"
+	echo
+	echo "  -o OUTDIR      output directory (default: SCHEDULE)"
+	echo
+	echo "  -i INITDIR     directory that contains affine matrices or warps to"
+	echo "                 initalize lin/non-lin transformations (eg FILE_to_target.mat)"
+	echo
+	echo "  -v             verbose mode, print more information"
+	echo
+	echo "  FILES          files to register, first will be the target if no REFERENCE"
+	echo "                 FILES are in base directory, where `basename $0` is executed"
+	echo "                 FILE_mask will be used as masks for registration"
+	echo
+}
+
+### RUN FLIRT #################################################################
+do_flirt ()
+{
+	FLIRTOPS=`cat $SCHEDFILE`
+
+	ORIGREF=`echo $REFERENCE $INFILES | awk '{print $1}'`
+	if [ 1 = `imtest ${ORIGREF}_mask` ]; then
+		imcp ${ORIGREF}_mask $OUTDIR/target_mask
+		[ $VERBOSE ] && echo "copying target mask: ${ORIGREF}_mask"
+		REFMASK="-refweight $OUTDIR/target_mask"
+	fi
+	imcp $ORIGREF $OUTDIR/target && REF=$OUTDIR/target
+	[ $VERBOSE ] && echo "copying target: ${ORIGREF}"
+
+	ALL=
+	for IN in $INFILES; do
+		[ 1 = `imtest ${IN}_mask` ] && INMASK="-inweight ${IN}_mask"
+		OUT=$OUTDIR/`basename $IN`_to_target_init
+		INITTRANS=`get_init_trans $IN | sed -e 's/--aff=/-init /'`
+		COMMAND="flirt -in $IN $INMASK -ref $REF $REFMASK $INITTRANS -out ${OUT} -omat ${OUT}.mat $FLIRTOPS"
+		echo $COMMAND
+		ALL="$ALL $OUT"
+		INMASK=
+	done > ${CMNDBASE}-main
+	[ $VERBOSE ] && { echo "using following initial transforms:"; grep -o '\-init [^ ]*' ${CMNDBASE}-main; }
+
+
+	[ -z "$NUDGEREF" ] || { REF=$NUDGEREF; [ $VERBOSE ] && echo "using nudgeref: $REF"; }
+	[ 1 = `imtest ${REF}_mask` ] && { REFMASK="-refweight ${REF}_mask"; [ $VERBOSE ] && echo "XXXusing nudgeref mask: ${REF}_mask"; }
+	TARGETMAT=template_init_to_`basename $REF`.mat
+
+cat > ${CMNDBASE}-post << EOF
+ALL="$ALL"
+OUTDIR=$OUTDIR
+fslmerge -t \$OUTDIR/all \$ALL
+fslmaths \$OUTDIR/all -Tmean \$OUTDIR/template_init
+flirt -in \$OUTDIR/template_init -ref $REF $REFMASK -omat \$OUTDIR/$TARGETMAT -nosearch -dof 12
+for g in \$ALL; do
+	convert_xfm -omat \${g%_init}.mat -concat \$OUTDIR/$TARGETMAT \${g}.mat;
+	flirt -in \`basename \${g%_to_target_init}\` -ref $REF -applyxfm -init \${g%_init}.mat -out \${g%_init} -interp sinc;
+	#optional back-projection of nudge mask
+	${BACKPROJ}convert_xfm -omat \${g%_init}_inv.mat -inverse \${g%_init}.mat
+	${BACKPROJ}flirt -in ${REF}_mask -ref \`basename \${g%_to_target_init}\` -applyxfm -init \${g%_init}_inv.mat -out \${g%_to_target_init}_mask -interp nearestneighbour
+done
+fslmerge -t \$OUTDIR/all \${ALL//_init}
+echo "merged \`fslnvols \$OUTDIR/all\` images"
+imrm \$ALL \${ALL//_init}; rm \${ALL//_init/_init.mat}
+fslmaths \$OUTDIR/all -Tmean \$OUTDIR/template
+EOF
+
+}
+
+### INITIAL TRANSFORMS FOR NON-LIN ALIGNEMENT #################################
+get_init_trans ()
+{
+	if [ "" = "$INITDIR" ]; then
+		printf "1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1\n" > $OUTDIR/id.mat
+		echo "--aff=$OUTDIR/id.mat"
+		return
+	fi
+
+	INITBASE=$INITDIR/`basename $1`_to_target
+
+	if [ -f ${INITBASE}.mat ]; then
+		echo "--aff=${INITBASE}.mat"
+		return
+	fi
+
+	if [ 1 = "`imtest ${INITBASE}_warp`" ]; then
+		echo "--inwarp=${INITBASE}_warp"
+		return
+	fi
+
+	echo "ERROR: Could not find initial transform \"${INITBASE}{.mat,_warp.nii.gz}\"" > /dev/stderr
+	exit 1
+}
+
+### RUN FNIRT #################################################################
+do_fnirt ()
+{
+	ORIGREF=`echo $REFERENCE $INFILES | awk '{print $1}'`
+	if [ 1 = `imtest ${ORIGREF}_mask` ]; then
+		imcp ${ORIGREF}_mask $OUTDIR/target_mask
+		[ $VERBOSE ] && echo "copying target mask: ${ORIGREF}_mask"
+		REFMASK="--refmask=$OUTDIR/target_mask"
+	fi
+	imcp $ORIGREF $OUTDIR/target && REF=$OUTDIR/target
+	[ $VERBOSE ] && echo "copying target: ${ORIGREF}"
+
+	ALL=
+	for IN in $INFILES; do
+		[ 1 = `imtest ${IN}_mask` ] && INMASK="--inmask=${IN}_mask"
+		OUT=$OUTDIR/`basename $IN`_to_target_init
+		INITTRANS=`get_init_trans $IN`
+		COMMAND="fnirt --in=$IN $INMASK --ref=$REF $REFMASK $INITTRANS --iout=${OUT} --cout=${OUT}_warp --config=$SCHEDFILE --logout=/dev/null -v > ${OUT}.log"
+		echo $COMMAND
+		ALL="$ALL $OUT"
+		INMASK=
+	done > ${CMNDBASE}-main
+	[ $VERBOSE ] && { echo "using following initial transforms:"; grep -o '\--\(aff\|inwarp\)=[^ ]*' ${CMNDBASE}-main; }
+
+
+	if [ ! -z "$NUDGEREF" ]; then
+		REF=$NUDGEREF
+		[ $VERBOSE ] && echo "using nudgeref: $NUDGEREF"
+		[ 1 = `imtest ${NUDGEREF}_mask` ] && { imcp ${NUDGEREF}_mask $OUTDIR/template_mask; echo "using nudgeref mask: ${NUDGEREF}_mask"; }
+	fi
+	[ 1 = `imtest ${REF}_mask` ] && REFMASK="--refmask=${REF}_mask"
+	TARGETTRANS=$OUTDIR/template_init_to_`basename $REF`
+
+
+cat > ${CMNDBASE}-post << EOF
+ALL="$ALL"
+OUTDIR=$OUTDIR
+fslmerge -t \$OUTDIR/all \$ALL
+fslmaths \$OUTDIR/all -Tmean \$OUTDIR/template_init
+flirt -in \$OUTDIR/template_init -ref $REF ${REFMASK/--refmask=/-refweight } -omat ${TARGETTRANS}.mat -nosearch -dof 12
+fnirt --in=\$OUTDIR/template_init --ref=$REF ${REFMASK} --aff=${TARGETTRANS}.mat --cout=${TARGETTRANS}_warp --config=$NUDGEFILE --logout=/dev/null -v > ${TARGETTRANS}.log
+TRANS2="--postmat=${TARGETTRANS}.mat"
+[ \`imtest ${TARGETTRANS}_warp\` = 1 ] && TRANS2="--warp2=${TARGETTRANS}_warp"
+for g in \$ALL; do
+	convertwarp --ref=${REF} --warp1=\${g}_warp \$TRANS2 --out=\${g%_init}_warp;
+	${BACKPROJ}invwarp -w \${g%_init}_warp -o \${g%_init}_inv_warp -r \`basename \${g%_to_target_init}\`
+	${BACKPROJ}applywarp -i ${REF}_mask -r \`basename \${g%_to_target_init}\` -w \${g%_init}_inv_warp -o \${g%_to_target_init}_mask --interp=nn
+done
+# final template
+for g in \$ALL; do applywarp -i \`basename \${g%_to_target_init}\` -r $REF -w \${g%_init}_warp -o \${g%_init} --interp=sinc; done
+fslmerge -t \$OUTDIR/all \${ALL//_init}
+echo "merged \`fslnvols \$OUTDIR/all\` images"
+imrm \$ALL \${ALL//_init}; imrm \${ALL//_init/_init_warp}
+fslmaths \$OUTDIR/all -Tmean \$OUTDIR/template
+EOF
+
+}
+
+### SCHEDULES  ##################################################################
+init_schedules ()
+{
+	 LIN=`sed -n -e "/FLIRT/ s/^#\ *START\ *FLIRT \([^#]*\)/\1/p" $0`
+	NLIN=`sed -n -e "/FNIRT/ s/^#\ *START\ *FNIRT \([^#]*\)/\1/p" $0 ` 
+}
+
+show_schedules ()
+{
+	echo
+	echo -n "Linear schedules:     "
+	echo $LIN | tr ' ' ','
+
+	echo -n "Non-linear schedules: "
+	echo $NLIN | tr ' ' ','
+	echo
+}
+
+cp_schedule ()
+{
+	sed -n "/^#\ *START\ *F[LN]IRT $1$/,/^#\ *END\ *F[LN]IRT $1$/p" $0 | grep -v '#' > $2
+}
+
+check_schedule ()
+{
+	for s in $LIN $NLIN; do
+		if [ "$s" = "$1" ]; then
+			cp_schedule $1 $2
+			[ $VERBOSE ] && { echo "using the following schedule:"; cat $2; }
+			return
+		fi
+	done
+	echo "ERROR: Could not find schedule: $1" > /dev/stderr
+	exit 1
+}
+
+### FILES CHECK ### ############################################################
+check_files ()
+{
+# TODO: check whether the files are in the dir where template2 is executed
+
+	TMP=
+	for f in $@; do
+		g=`imglob $f`
+		[ -z "$g" ] && { echo "ERROR: could not find image file: \"$f\"" > /dev/stderr; exit 1; }
+		TMP="$TMP $g"
+	done
+	echo $TMP
+}
+
+###############################################################################
+# MAIN                                                                        #
+###############################################################################
+LOG="`date`: $0 $@"
+
+BACKPROJ="#"
+while getopts s:r:n:m:bo:i:lv opt
+do
+    case "$opt" in
+      s)  SCHEDULE="$OPTARG";;
+      r)  REFERENCE="`remove_ext $OPTARG`";;
+      n)  NUDGEREF="`remove_ext $OPTARG`";;
+      m)  NUDGESCHED="$OPTARG";;
+	  b)  BACKPROJ="";;
+      o)  OUTDIR="${OPTARG%/}";;
+      i)  INITDIR="$OPTARG";;
+	  l)  LIST=true;;
+	  v)  VERBOSE=true;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+### INIT & CHECK ##############################################################
+init_schedules
+[ "$LIST" ] && { show_schedules; exit 0; }
+
+[ `echo $REFERENCE $@ | wc -w` -lt 2 ] && { usage; exit 1; }
+[ -z "$REFERENCE" -o "`imtest $REFERENCE`" = 1 ] || { echo "ERROR: Could not find REFERENCE image: $REFERENCE" > /dev/stderr; exit 1; }
+[ -z "$NUDGEREF"  -o "`imtest $NUDGEREF`" = 1  ] || { echo "ERROR: Could not find NUDGEREF image: $NUDGEREF" > /dev/stderr; exit 1; }
+[ "" = "$OUTDIR"   ] && OUTDIR=$SCHEDULE; mkdir -p $OUTDIR
+[ "" = "$INITDIR" -o -d "$INITDIR" ] || { echo "ERROR: Could not find INITDIR: $INITDIR" > /dev/stderr; exit 1; }
+CMNDBASE=$OUTDIR/commands; rm -f ${CMNDBASE}*
+INFILES=`check_files $@` || exit 1
+
+[ "" = "$SCHEDULE" ] && { echo "ERROR: Please specify SCHEDULE" > /dev/stderr; exit 1; }
+SCHEDFILE=$OUTDIR/schedule.cnf
+check_schedule $SCHEDULE $SCHEDFILE
+
+[ $VERBOSE ] && echo "setting up nudging"
+NUDGEFILE=$OUTDIR/nudge_schedule.cnf
+check_schedule $NUDGESCHED $NUDGEFILE
+
+echo "$LOG" >> $OUTDIR/.log
+
+if [ `wc -l $SCHEDFILE | awk '{print $1}'` -lt 2 ]; then
+	do_flirt
+	echo "LINEAR ALIGNMENT, SCHEDULE: $SCHEDULE"
+else
+	do_fnirt
+	echo "NON-LINEAR ALIGNMENT: $SCHEDULE"
+fi
+
+chmod 755 ${CMNDBASE}*
+printf "finished, now run:\n`find ./${CMNDBASE}*`\n"
+
+exit 0
+
+
+
+### SCHEDULES #################################################################
+# start with: START FLIRT/FNIRT NAME
+# end with:   END FLIRT/FNIRT NAME
+
+###############################################################################
+# START FLIRT 6DOF
+-nosearch -dof 6
+# END FLIRT 6DOF
+
+###############################################################################
+# START FLIRT 12DOF
+-nosearch -dof 12
+# END FLIRT 12DOF
+
+###############################################################################
+# Non-linear quick to quickly create a crisp initial non-linear template (run 5 in parallel)
+# START FNIRT NL01
+# apply masks
+--applyrefmask=1
+--applyinmask=1
+# If =1, use implicit masking based on value in --ref image. Default =1
+--imprefm=1
+# If =1, use implicit masking based on value in --in image, Default =1
+--impinm=1
+# Value to mask out in --ref image. Default =0.0
+--imprefval=0
+# Value to mask out in --in image. Default =0.0
+--impinval=0
+# sub-sampling scheme, default 4,2,1,1
+--subsamp=2
+#       Max # of non-linear iterations, default 5,5,5,5
+--miter=5
+# FWHM (in mm) of gaussian smoothing kernel for input volume, default 6,4,2,2
+--infwhm=0.3
+# FWHM (in mm) of gaussian smoothing kernel for ref volume, default 4,2,0,0
+--reffwhm=0.3
+# Weigth of membrane energy regularisation, default depending on --ssqlambda and --regmod switches. See user documetation.
+--lambda=9
+# Estimate intensity-mapping if set, deafult 1 (true)
+--estint=1
+# (approximate) resolution (in mm) of warp basis in x-, y- and z-direction, default 10,10,10
+--warpres=0.5,0.5,0.5
+# If set (=1), lambda is weighted by current ssq, default 1
+--ssqlambda=1
+# Model for regularisation of warp-field [membrane_energy bending_energy], default bending_energy
+--regmod=bending_energy
+# Model for intensity-mapping [none global_linear global_non_linear local_linear global_non_linear_with_bias local_non_linear]
+--intmod=global_non_linear_with_bias
+#--intmod=global_linear
+##      Order of poynomial for mapping intensities, default 5
+--intorder=5
+##      Resolution (in mm) of bias-field modelling local intensities, default 50,50,50
+--biasres=10,10,10
+##      Weight of regularisation for bias-field, default 10000
+--biaslambda=500
+##      If =1, ref image is used to calculate derivatives. Default =0
+--refderiv=0
+# END FNIRT NL01
+
+###############################################################################
+# START FNIRT NL02
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1
+--miter=5
+--infwhm=0.2
+--reffwhm=0.2
+--lambda=9
+--estint=1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+# END FNIRT NL02
+
+###############################################################################
+# START FNIRT NL03
+--applyrefmask=1,1
+--applyinmask=1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1
+--miter=5,5
+--infwhm=0.2,0.15
+--reffwhm=0.2,0.1
+--lambda=6,3
+--estint=1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+# END FNIRT NL03
+
+###############################################################################
+# START FNIRT NL04
+--applyrefmask=1,1
+--applyinmask=1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1
+--miter=5,5
+--infwhm=0.15,0.1
+--reffwhm=0.1,0
+--lambda=3,1
+--estint=1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+# END FNIRT NL04
+
+###############################################################################
+# START FNIRT temp2temp
+# apply masks
+--applyrefmask=1,0
+--applyinmask=1,0
+# If =1, use implicit masking based on value in --ref image. Default =1
+--imprefm=1
+# If =1, use implicit masking based on value in --in image, Default =1
+--impinm=1
+# Value to mask out in --ref image. Default =0.0
+--imprefval=0
+# Value to mask out in --in image. Default =0.0
+--impinval=0
+# sub-sampling scheme, default 4,2,1,1
+--subsamp=2,1
+#       Max # of non-linear iterations, default 5,5,5,5
+--miter=5,5
+# FWHM (in mm) of gaussian smoothing kernel for input volume, default 6,4,2,2
+--infwhm=0.3,0.1
+# FWHM (in mm) of gaussian smoothing kernel for ref volume, default 4,2,0,0
+--reffwhm=0.3,0.1
+# Weigth of membrane energy regularisation, default depending on --ssqlambda and --regmod switches. See user documetation.
+--lambda=9,6
+# Estimate intensity-mapping if set, deafult 1 (true)
+--estint=1,0
+# (approximate) resolution (in mm) of warp basis in x-, y- and z-direction, default 10,10,10
+--warpres=0.5,0.5,0.5
+# If set (=1), lambda is weighted by current ssq, default 1
+--ssqlambda=1
+# Model for regularisation of warp-field [membrane_energy bending_energy], default bending_energy
+--regmod=bending_energy
+# Model for intensity-mapping [none global_linear global_non_linear local_linear global_non_linear_with_bias local_non_linear]
+--intmod=global_non_linear_with_bias
+#--intmod=global_linear
+##      Order of poynomial for mapping intensities, default 5
+--intorder=5
+##      Resolution (in mm) of bias-field modelling local intensities, default 50,50,50
+--biasres=10,10,10
+##      Weight of regularisation for bias-field, default 10000
+--biaslambda=500
+##      If =1, ref image is used to calculate derivatives. Default =0
+--refderiv=0
+# END FNIRT temp2temp
+
+###############################################################################
+# START FNIRT temp2temp2
+--applyrefmask=1,1
+--applyinmask=1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1
+--miter=5,5
+--infwhm=0.3,0.1
+--reffwhm=0.3,0.1
+--lambda=6,3
+--estint=1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+# END FNIRT temp2temp2
+
+###############################################################################
+# START FNIRT temp2temp3
+--applyrefmask=1,1
+--applyinmask=1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=1,1
+--miter=5,5
+--infwhm=0.1,0
+--reffwhm=0.1,0
+--lambda=3,1
+--estint=1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+# END FNIRT temp2temp3
+
