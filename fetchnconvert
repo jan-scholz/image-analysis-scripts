@@ -1,0 +1,125 @@
+#! /bin/bash
+# download and convert scanner data
+# 
+
+FSE=/home/jscholz/resources/mri/fse_108_108_6_1
+RECONARGS="-clobber -quiet -noclip -shiftppe2"
+
+usage ()
+{
+	echo "Usage: `basename $0` [-f FSEFILE] -i INDIR OUTNAME1 OUTNAME2 .."
+	echo "  -i INDIR          fid input directory (at $REMOTE)"
+	echo "   OUTNAME1         the name asigned to the output of the 1st, 2nd, and 3rd coil"
+	echo "                    E.g.: mouse01 mouse02 mouse03"
+	echo
+	echo "  -f FSEFILE        (default: $FSE) "
+	echo "  -r \"VRECONFLAGS\"  vrecon flags (added to: $RECONARGS)"
+	echo "  -p PROCPAR        alternative procpar (usefule if coil settings were wrong)"
+	echo "  -l                list last 10 acquisitions"
+	echo
+}
+
+
+clean_up () {
+	rm -f fid.* vol.* && echo "caught the interrupt"
+}
+
+print_info () {
+	echo "FSE    $FSE"
+	echo "INDIR  $INDIR"
+	echo "OUTNRS $OUTNRS"
+	echo
+}
+
+set_library_path () {
+	for p in /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64 /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64 /projects/mice/jbishop/bin; do
+		if echo $LD_LIBRARY_PATH | grep $p > /dev/null 2> /dev/null; then
+			:
+		else
+			export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$p"
+			[ -z "$VERBOSE" ] || echo "adding to \$LD_LIBRARY_PATH: $p"
+		fi
+	done
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+ARGS=$@
+
+while getopts i:f:r:p:lv opt
+do
+    case "$opt" in
+      i)    INDIR="${OPTARG%/}";;
+      f)      FSE="$OPTARG";;
+      r) RECONADD="$OPTARG";;
+      p)  PROCPAR="$OPTARG";;
+      l)     LIST=true;;
+	  v)  VERBOSE=true;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$LIST" ] || {	ssh jacob@mouse41 ls -tl /home/jacob/ | head; exit 0; }
+
+OUTNRS="$@"
+REMOTE="jacob@mouse41:/home/jacob/$INDIR"
+CWDIR=$PWD
+
+set_library_path
+export FIDDIR="."
+export IMGDIR="."
+
+[ ${#OUTNRS} -lt 1 ] && { usage; exit 1; }
+[ -f "$FSE" ] || { echo "ERROR: Could not find FSE file: $FSE"; exit 1; }
+[ -z "$INDIR" ] && { echo "ERROR: remote INDIR not specified"; exit 1; }
+[ -z "$VERBOSE" ] || print_info
+
+trap "{ clean_up; exit 0; }" SIGINT SIGTERM
+
+echo copying files from remote: $REMOTE
+rsync -auv $REMOTE . || { echo "ERROR: rsync failed"; exit 1; }
+cp $FSE $INDIR && FSE=`basename $FSE`
+
+if [ ! -z "$PROCPAR" ]; then
+	[ -f "$PROCPAR" ] || { echo "ERROR: could not find alternative procpar $PROCPAR"; exit 1; }
+	[ -f "$INDIR/procpar.bkp" ] || cp $INDIR/procpar $INDIR/procpar.bkp
+	cp $PROCPAR $INDIR/procpar && echo "using alternative procpar $PROCPAR"
+fi
+
+[ -z "$VERBOSE" ] || echo converting
+cd $INDIR
+echo "`date` $ARGS" >> .log
+/projects/mice/jbishop/bin/vrecon $RECONARGS $RECONADD -vmap $FSE fid vol > /dev/null || { echo "ERROR: vrecon failed"; exit 1; }
+
+[ -z "$VERBOSE" ] || echo renaming
+for f in vol*.mnc; do
+	NEW=`echo $f | awk -F\. '{ printf "%s.%02i.%04i.%s", $1, $2, $3, $4}'`
+	[ "$f" = "$NEW" ] || mv $f $NEW
+done
+
+[ -z "$VERBOSE" ] || echo merging
+i=1
+for o in $OUTNRS; do
+	mincconcat -2 -quiet -clobber -concat_dimension time vol.`printf "%02i" $i`.* ${o%.mnc}.mnc
+	OUT="$OUT ${o%.mnc}.mnc"
+	i=$(($i + 1))
+done
+
+# renaming in case output file exists
+for f in $OUT; do
+	[ -f ../`basename ${f%.mnc}a.mnc` ] && { echo "Warning: Found previous output file. Renaming it to ${f%.mnc}b.mnc."; cp -v ../`basename ${f%.mnc}a.mnc` ../`basename ${f%.mnc}b.mnc`; }
+	[ -f ../`basename $f` ]             && { echo "Warning: Found previous output file. Renaming it to ${f%.mnc}a.mnc."; cp -v ../`basename $f`             ../`basename ${f%.mnc}a.mnc`; }
+	mv -v $f ..
+done
+
+rm -f fid.* vol.*
+
+cd - > /dev/null
+exit 0
+
+#echo run the following command to archive
+#echo tar cvjf `basename $INDIR`.bz2 $INDIR
+
