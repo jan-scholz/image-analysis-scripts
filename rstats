@@ -1,0 +1,158 @@
+#!/usr/bin/env Rscript
+#
+# Runs some basic statistics
+# copyright 2011 jan.scholz@phenogenomics.ca
+# 2011-08-03
+
+usage <- function () {
+	cat("Usage: rstats -t table -m mask\n")
+	cat("  -t TABLE       association between filenames and EVs\n")
+	cat("                 first line contains column names\n")
+	cat("  -e EV          EV of interest (default: grp)\n")
+	cat("  -f FORMULA     use this formula instead of EV\n")
+	cat("  -d             add mean regressor (default: none)\n")
+	cat("  -m MASK        brain mask\n")
+	cat("  -o OUT         output base\n")
+	cat("  -a ATLAS       atlas to calculate statistics for individual structures\n")
+	cat("\n")
+	cat("More than one slope is written out as _test1, _test2, ...")
+	cat("\n")
+	cat("Example:\n")
+	cat("rstats -t evs_FA.txt -m ../atlas/mask.mnc -o stats_grp_FA -a ../atlas/atlas.mnc\n")
+}
+
+
+### COMMAND LINE ARGUMENTS ####################################################
+args <- commandArgs(TRUE)
+opts <- NULL
+opts$ev <- 'grp'
+opts$meanreg <- F
+
+if (length(args)==0) {
+    usage()
+	quit(status=1)
+} else {
+	i <- 1
+    while ( i <= length(args) ) {
+		if        (args[i] == "-t") { 
+			opts$table   <- args[i+1] 
+		} else if (args[i] == "-e") { 
+			opts$ev      <- args[i+1] 
+		} else if (args[i] == "-d") { 
+			opts$meanreg <- T
+		} else if (args[i] == "-m") { 
+			opts$mask    <- args[i+1] 
+		} else if (args[i] == "-o") { 
+			opts$outvol  <- args[i+1] 
+		} else if (args[i] == "-a") { 
+			opts$atlas   <- args[i+1] 
+		} else if (args[i] == "-f") { 
+			opts$form    <- args[i+1] 
+		} else { 
+			cat("ERROR: option ",args[i]," does not exist\n")
+			q(status=1)
+		}
+		i <- i+2;
+    }
+}
+
+if ( is.null(opts$table) | is.null(opts$mask) | is.null(opts$outvol) ) {
+    usage()
+	q(status=1)
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+sink('/dev/null')
+
+library(RMINC)
+gf1 <- read.table(opts$table, header=T)
+
+
+# default formula: filename ~ ev, otherwise set to FOMRULA
+if ( is.null(opts$form) ) {
+	# test if ev is in gf1 table
+	if ( is.null(get(opts$ev,gf1)) ) {
+		cat("ERROR: EV ",opts$ev," not found")
+		q(status=1)
+	}
+	formula <- as.formula(paste("filename ~ ",opts$ev))
+} else {
+	formula <- as.formula(opts$form)
+}
+
+cat("set formula: ")
+formula
+cat("\n")
+
+
+# re-order factors, if alphabetical order is useless
+#gf1$cond <- relevel(gf1$cond,"Control")
+#gf1$inj <- relevel(gf1$inj,"saline")
+
+vs1 <- mincLm(formula, gf1)
+qvals1 <- mincFDR(vs1,mask=opts$mask,method="FDR")
+
+
+ntests <- ncol(vs1) - 2
+testnames <- attr(vs1,"dimnames")[[2]]
+
+cat(paste("Found",ntests,"slopes"))
+cat("\n")
+
+
+for(i in 1:ntests) {
+
+	if ( ntests > 1 ) {
+		outbase <- paste(opts$outvol,"_test",i,sep="")
+		write.table(testnames,paste(opts$outvol,"_names.txt",sep=""),col.names=F,row.names=F)
+	} else {
+		outbase <- opts$outvol
+	}
+
+	cat(paste("### Writing:",testnames[i+2],"###################################\n"))
+	mincWriteVolume(vs1,    paste(outbase,".mnc",sep=""),     i+2,clobber=T)
+	mincWriteVolume(qvals1, paste(outbase,"_fdr.mnc",sep=""), i+2,clobber=T)
+
+	# average within atlas-defined structures
+	if ( !is.null(opts$atlas) ) {
+
+		vols <- anatGetAll(gf1$filename, opts$atlas, method='means')
+
+		vs_vols <- anatLm(formula,gf1,vols)
+		qvals_vols <- anatFDR(vs_vols)
+		qvals <- data.frame(name=rownames(vs_vols),qval=qvals_vols[,3])
+		sorted <- qvals[order(qvals$qval,decreasing=T),]
+		write.table(sorted,paste(outbase,"_all.txt",sep=""))
+
+		combined_vols <- anatCombineStructures(vols, method='means')
+		vs_vols <- anatLm(formula,gf1,combined_vols)
+		qvals_vols <- anatFDR(vs_vols)
+		qvals <- data.frame(name=rownames(vs_vols),qval=qvals_vols[,3])
+		sorted <- qvals[order(qvals$qval,decreasing=T),]
+		write.table(sorted,paste(outbase,"_comb.txt",sep=""))
+
+		sink()
+
+		if ( sum(sorted$qval<0.2) > 0 ) { 
+			cat("\n")
+			cat("### FDR < 0.2 (L-R combined) ############################################\n")
+			print(sorted[sorted$qval<0.2,])
+			cat("\n")
+		}
+
+	}
+
+}
+
+
+
+q(status=0)
+
+
+#eval(parse(text=args[[i]]))
+
+
