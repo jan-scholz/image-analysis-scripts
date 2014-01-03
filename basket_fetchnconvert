@@ -1,0 +1,219 @@
+#! /bin/bash
+# download and convert scanner data
+# 
+
+FSE=/home/jscholz/resources/mri/fse_108_108_6_1
+RECONARGS="-clobber -noclip -shiftppe2"  #-quiet
+CONSOLE=jacob@mouse41
+HOME=/home/jacob/
+
+usage ()
+{
+	echo "Usage: `basename $0` [-f FSEFILE] -i INDIR OUTNAME.."
+	echo "  -i INDIR          fid input directory (if relative path then relative to $HOME)"
+	echo "   OUTNAME          the name(s) asigned to the output"
+	echo "                    one OUTNAME will be taken as a basename for all files"
+	echo "                    E.g. OUTNAME.01 OUTNAME.02 .. (the suffix denotes to the coil)"
+	echo "                    several OUTNAMEs will be used literaly"
+	echo "                    E.g.: mouseA mouseB mouseC"
+	echo
+	echo "  -f FSEFILE        (default: $FSE) "
+	echo "  -r \"VRECONFLAGS\"  vrecon flags (added to: $RECONARGS)"
+	echo "  -p PROCPAR        alternative procpar (usefule if coil settings were wrong)"
+	echo "  -b                use for basket scans, no concatenation"
+	echo
+	echo "  -l                list last 10 acquisitions in $HOME"
+	echo
+	echo "use -pmod -croplpe for basket"
+}
+
+
+clean_up () {
+	rm -rf $TMPTRANS fid.* vol.* && echo "caught the interrupt"
+}
+
+print_info () {
+	echo "FSE    $FSE"
+	echo "INDIR  $INDIR"
+	echo "OUTNRS $OUTNRS"
+	echo
+}
+
+set_library_path () {
+	for p in /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64 /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64 /projects/mice/jbishop/bin; do
+		if echo $LD_LIBRARY_PATH | grep $p > /dev/null 2> /dev/null; then
+			:
+		else
+			export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$p"
+			[ -z "$VERBOSE" ] || echo "adding to \$LD_LIBRARY_PATH: $p"
+		fi
+	done
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+ARGS=$@
+
+while getopts i:f:r:p:blv opt
+do
+    case "$opt" in
+      i)    INDIR="${OPTARG%/}";;
+      f)      FSE="$OPTARG";;
+      r) RECONADD="$OPTARG";;
+      p)  PROCPAR="$OPTARG";;
+      b)   BASKET=true;;
+      l)     LIST=true;;
+	  v)  VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$LIST" ] || {	ssh jacob@mouse41 ls -tl $HOME | head; exit 0; }
+
+if [ "${INDIR:0:1}" = "/" ]; then
+	REMOTE=$CONSOLE:$INDIR
+else
+	REMOTE="$INDIR:$HOME/$INDIR"
+fi
+
+OUTNRS="$@"
+BASEDIR=$PWD
+TMPTRANS="$BASEDIR/tmp_transfer"
+
+set_library_path
+export FIDDIR="."
+export IMGDIR="."
+
+[ ${#OUTNRS} -lt 1 ] && { usage; exit 1; }
+[ -f "$FSE" ] || { echo "ERROR: Could not find FSE file: $FSE"; exit 1; }
+[ -z "$INDIR" ] && { echo "ERROR: remote INDIR not specified"; exit 1; }
+[ -z "$VERBOSE" ] || print_info
+
+trap "{ clean_up; exit 0; }" SIGINT SIGTERM
+
+
+###############################################################################
+
+#You can use --rsync-path option to run command on remote side before rsync itself.
+#rsync --rsync-path='command_before_rsync && rsync' 
+
+
+echo copying files from remote: $REMOTE
+echo to temporary directory:    $TMPTRANS
+#rsync -auv $REMOTE $TMPTRANS || { echo "ERROR: rsync failed"; exit 1; }
+echo rsync -auv $INDIR $TMPTRANS
+rsync -auv $INDIR $TMPTRANS || { echo "ERROR: rsync failed"; exit 1; }
+
+
+T=$TMPTRANS/`basename $INDIR`
+
+if [ -z "$BASKET" ]; then
+	if [ -f "$T/fid" ]; then
+		mv $T $BASEDIR/
+		LOCAL=$BASEDIR/$INDIR
+	else
+		{ echo "ERROR: could not find $T/fid"; exit 1; }
+	fi
+else
+	if [ -f "$T/fid0" ]; then
+		ACQDATE=`date -r $T/fid0 +"%d%h%y" | tr [A-Z] [a-z]`
+		mv -v $T $BASEDIR/foo_$ACQDATE.fid
+		LOCAL=$BASEDIR/foo_$ACQDATE.fid
+	else
+		{ echo "ERROR: could not find $T/fid0"; exit 1; }
+	fi
+fi
+
+exit 1
+
+## delete these
+#LOCAL=$BASEDIR/asket_06dec11.fid
+
+
+###############################################################################
+if [ ! -z "$PROCPAR" ]; then
+	[ -f "$PROCPAR" ] || { echo "ERROR: could not find alternative procpar $PROCPAR"; exit 1; }
+	[ -f "$LOCAL/procpar.bkp" ] || cp $LOCAL/procpar $LOCAL/procpar.bkp
+	cp $PROCPAR $LOCAL/procpar && echo "using alternative procpar $PROCPAR"
+fi
+
+
+###############################################################################
+[ -z "$VERBOSE" ] || echo converting
+cd $LOCAL
+echo "`date` `basename $0` $ARGS" >> .log
+
+
+###############################################################################
+if [ -z "$BASKET" ]; then
+	cp $VERBOSE $FSE $LOCAL && FSE=`basename $FSE`
+
+	/projects/mice/jbishop/bin/vrecon $RECONARGS $RECONADD -vmap $FSE fid vol > /dev/null || { echo "ERROR: vrecon failed"; exit 1; }
+
+	[ -z "$VERBOSE" ] || echo renaming
+	for f in vol*.mnc; do
+		NEW=`echo $f | awk -F\. '{ printf "%s.%02i.%04i.%s", $1, $2, $3, $4}'`
+		[ "$f" = "$NEW" ] || mv $f $NEW
+	done
+
+	[ -z "$VERBOSE" ] || echo merging
+	i=1
+	for o in $OUTNRS; do
+		mincconcat -2 -quiet -clobber -concat_dimension time vol.`printf "%02i" $i`.* ${o%.mnc}.mnc
+		OUT="$OUT ${o%.mnc}.mnc"
+		i=$(($i + 1))
+	done
+
+# renaming in case output file exists
+	for f in $OUT; do
+		[ -f ../`basename ${f%.mnc}a.mnc` ] && { echo "Warning: Found previous output file. Renaming it to ${f%.mnc}b.mnc."; cp -v ../`basename ${f%.mnc}a.mnc` ../`basename ${f%.mnc}b.mnc`; }
+		[ -f ../`basename $f` ]             && { echo "Warning: Found previous output file. Renaming it to ${f%.mnc}a.mnc."; cp -v ../`basename $f`             ../`basename ${f%.mnc}a.mnc`; }
+		mv -v $f ..
+	done
+
+else
+	# fse table for phase correction
+	cp $VERBOSE /home/jscholz/resources/mri/fse_60_8_6_3 .
+
+	# fse table for image reconstruction
+	FSE=fse_504_250_6_3
+
+	P=$LOCAL/procpar_`date -r $LOCAL/fid0 +"%d%h%y" | tr [A-Z] [a-z]`.par/procpar
+	RECONADD="-pmod -croplpe -p $P"
+
+
+echo
+echo DIR $FIDDIR , $IMGDIR
+echo LIB $LD_LIBRARY_PATH
+ls -ltr
+echo
+which matlab2010b
+
+# export FIDDIR="."; export IMGDIR="."; export LD_LIBRARY_PATH="/usr/lib/fsl/4.1:/projects/mice/share/arch/linux-x86_64-eglibc2_11_1/lib:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin"
+echo "/projects/mice/jbishop/bin/vrecon $RECONARGS $RECONADD -vmap $FSE fid vol"; read
+      /projects/mice/jbishop/bin/vrecon $RECONARGS $RECONADD -vmap $FSE fid vol 
+#> /dev/null || { echo "ERROR: vrecon failed"; exit 1; }
+
+	[ -z "$VERBOSE" ] || echo renaming
+	for f in vol*.mnc; do
+		NEW=`echo $f | awk -F\. '{ printf "%s.%02i.%s", $1, $2, $3}'`
+		[ "$f" = "$NEW" ] || mv $f $NEW
+	done
+
+	echo waiting
+	read
+
+fi
+
+rm -f fid.* vol.*
+#rm -fr $TMPTRANS
+cd - > /dev/null
+
+exit 0
+
+#echo run the following command to archive
+#echo tar cvjf `basename $INDIR`.bz2 $INDIR
+
