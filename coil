@@ -1,0 +1,21 @@
+#! /bin/bash
+# report coil number
+
+usage ()
+{
+	echo "Usage: $(basename $0) MINCFILE.."
+	echo "shows coil number if present in header"
+}
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+
+
+for f in $@; do
+	mincheader $f | grep vnmr:coil > /dev/null || { echo "ERROR: could not open or find attribute vnmr:coil in file: $f"; exit 1; }
+	COIL=`mincinfo -attvalue vnmr:coil $f`
+	printf "%s %g\n" $f $COIL
+done
+
+
+
