@@ -16,13 +16,25 @@ minctest ()
 
 filetype ()
 {
-	case `file -b $1` in
+	IN=$1	
+
+	if [ -h "$IN" ]; then
+		if which readlink >/dev/null; then
+			IN=`readlink $IN`
+		else
+			echo "ERROR: can't handle links without 'readlink'" > /dev/stderr
+			exit 1
+		fi
+	fi
+
+	case `file -b $IN` in
 		"NetCDF Data Format data") echo "minc 1";;
 		"Hierarchical Data Format (version 5) data") echo "minc 2";;
-		"gzip compressed data"*) [ 1 = "`imtest $1`" ] && echo "nifti `fslhd $1 | grep file_code | awk '{print $2}'`";; 
-		*) echo "ERROR: cannot open file $1" > /dev/stderr; exit 1;;
+		"gzip compressed data"*) [ 1 = "`imtest $1`" ] && echo "nifti `fslhd $IN | grep file_code | awk '{print $2}'`";; 
+		*) echo "ERROR: cannot open file $IN" > /dev/stderr; exit 1;;
 	esac
 }
+
 
 
 ###############################################################################
