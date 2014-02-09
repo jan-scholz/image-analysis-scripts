@@ -84,9 +84,11 @@ if ( is.null(opts$form) ) {
 	formula <- as.formula(opts$form)
 }
 
+sink()
 cat("set formula: ")
 formula
 cat("\n")
+sink('/dev/null')
 
 
 # re-order factors, if alphabetical order is useless
@@ -120,7 +122,7 @@ for(i in 1:ntests) {
 	# average within atlas-defined structures
 	if ( !is.null(opts$atlas) ) {
 
-		vols <- anatGetAll(gf1$filename, opts$atlas, method='means')
+		vols <- anatGetAll(gf1$filename, opts$atlas, method='means')     # volume
 
 		vs_vols <- anatLm(formula,gf1,vols)
 		qvals_vols <- anatFDR(vs_vols)
