@@ -4,13 +4,18 @@
 
 FSE=/home/jscholz/resources/mri/fse_108_108_6_1
 RECONARGS="-clobber -quiet -noclip -shiftppe2"
+HOME=/home/jacob
+MACHINE=jacob@mouse41
 
 usage ()
 {
-	echo "Usage: `basename $0` [-f FSEFILE] -i INDIR OUTNAME1 OUTNAME2 .."
-	echo "  -i INDIR          fid input directory (at $REMOTE)"
-	echo "   OUTNAME1         the name asigned to the output of the 1st, 2nd, and 3rd coil"
-	echo "                    E.g.: mouse01 mouse02 mouse03"
+	echo "Usage: `basename $0` [-f FSEFILE] -i INDIR OUTNAME.."
+	echo "  -i INDIR          fid input directory (if relative path then relative to $HOME)"
+	echo "   OUTNAME          the name(s) asigned to the output"
+	#echo "                    one OUTNAME will be taken as a basename for all files"
+	#echo "                    E.g. OUTNAME.01 OUTNAME.02 .. (the suffix denotes to the coil)"
+	#echo "                    several OUTNAMEs will be used literaly"
+	echo "                    E.g.: mouseA mouseB mouseC"
 	echo
 	echo "  -f FSEFILE        (default: $FSE) "
 	echo "  -r \"VRECONFLAGS\"  vrecon flags (added to: $RECONARGS)"
@@ -31,6 +36,7 @@ print_info () {
 	echo
 }
 
+	#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin;
 set_library_path () {
 	for p in /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64 /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64 /projects/mice/jbishop/bin; do
 		if echo $LD_LIBRARY_PATH | grep $p > /dev/null 2> /dev/null; then
@@ -56,23 +62,28 @@ do
       r) RECONADD="$OPTARG";;
       p)  PROCPAR="$OPTARG";;
       l)     LIST=true;;
-	  v)  VERBOSE=true;;
+	  v)  VERBOSE="-v";;
       \?)  usage; exit 1;;
     esac
 done
 shift `expr $OPTIND - 1`
 
-[ -z "$LIST" ] || {	ssh jacob@mouse41 ls -tl /home/jacob/ | head; exit 0; }
+[ -z "$LIST" ] || {	ssh $MACHINE ls -tl $HOME | head; exit 0; }
+
+if [ "${INDIR:0:1}" = "/" ]; then
+	REMOTE=$MACHINE:$INDIR
+else
+	REMOTE="$MACHINE:$HOME/$INDIR"
+fi
 
 OUTNRS="$@"
-REMOTE="jacob@mouse41:/home/jacob/$INDIR"
-CWDIR=$PWD
+[ ${#OUTNRS} -lt 1 ] && { usage; exit 1; }
 
+INDIR=`basename $INDIR`
 set_library_path
 export FIDDIR="."
 export IMGDIR="."
 
-[ ${#OUTNRS} -lt 1 ] && { usage; exit 1; }
 [ -f "$FSE" ] || { echo "ERROR: Could not find FSE file: $FSE"; exit 1; }
 [ -z "$INDIR" ] && { echo "ERROR: remote INDIR not specified"; exit 1; }
 [ -z "$VERBOSE" ] || print_info
@@ -91,7 +102,7 @@ fi
 
 [ -z "$VERBOSE" ] || echo converting
 cd $INDIR
-echo "`date` $ARGS" >> .log
+echo "`date` $0 $ARGS" >> .log
 /projects/mice/jbishop/bin/vrecon $RECONARGS $RECONADD -vmap $FSE fid vol > /dev/null || { echo "ERROR: vrecon failed"; exit 1; }
 
 [ -z "$VERBOSE" ] || echo renaming
