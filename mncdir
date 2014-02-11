@@ -7,16 +7,19 @@
 
 usage ()
 {
-	echo "Usage: `basename $0` IMAGES.. [SLICEOPTIONS..]"
+	echo "Usage: `basename $0` [MINCPIKOPTIONS..] IMAGES.. [SLICEOPTIONS..]"
 	echo "  SLICEOPTIONS      more than one option and more than one slice number can be specified"
 	echo "                    if not specified 3 slices for each orientation will be created"
 	echo "     -axial    N.."
 	echo "     -coronal  N.."
 	echo "     -sagittal N.."
 	echo
+	echo "  MINCPIKOPTIONS    adjust intensity ranges, e.g. -image_range MIN MAX"
+	echo
 	echo "  EXAMPLE"
-	echo "     `basename $0` MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
 	echo "     `basename $0` MINCFILE.. "
+	echo "     `basename $0` MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
+	echo "     `basename $0` -image_range 0 1 MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
 }
 
 
@@ -33,6 +36,11 @@ REPORT=$OUTDIR/index.html;
 
 echo "<html><body>" > $REPORT
 
+PIKOPTS=
+while [ ! "$1" = "${1%.mnc}.mnc" ]; do
+	PIKOPTS="$PIKOPTS $1"; shift;
+done
+
 IMAGES=
 while [ "$1" = "${1%.mnc}.mnc" ]; do
 	IMAGES="$IMAGES $1"; shift;
@@ -40,7 +48,7 @@ done
 
 [ -z "$IMAGES" ] && { echo "ERROR: found no images"; exit 1; }
 
-[ "$#" -lt 1 ] && { eval "$0 $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
+[ "$#" -lt 1 ] && { eval "$0 $PIKOPTS $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
 #[ "${!#}" = "-default" ] && { eval "$0 $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
 
 
@@ -63,7 +71,7 @@ for ARG in $@; do
 					"-sagittal") N=$(($XLEN * $1 / 100)) ;;
 				esac
 
-				mincpik -clobber $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
+				mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
 				let j++
 			done
 			shift
