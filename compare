@@ -1,0 +1,78 @@
+#! /bin/bash
+# compare images, useful for re-scans
+
+usage ()
+{
+	echo "Usage: $(basename $0) -r REFERENCE IMAGE.."
+	echo "  -r REFERENCE     compare to this image"
+	echo "  IMAGE            one or several images to compare to reference"
+}
+
+
+cond_convert ()
+{
+	mincinfo $1 > /dev/null && { mncconvert $1 $2 &> /dev/null; return; }
+	fslinfo  $1 > /dev/null && {       imcp $1 $2;              return; }
+	echo "ERROR: could not open file: $1"; exit 1
+}
+
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+
+while getopts r:v opt
+do
+    case "$opt" in
+      r)  REFERENCE="${OPTARG}";;
+      v)    VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+which mncconvert > /dev/null || { echo "ERROR: could not find mncconvert"; exit 1; }
+
+
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+
+[ -z "$REFERENCE" ] && { echo "ERROR: no reference specified"; exit 1; }
+REF=$TDIR/`basename $REFERENCE .mnc`
+cond_convert $REFERENCE $REF
+
+
+IN=; i=0
+for f in $@; do
+	g=`printf "%03i_%s" $i $(basename $f .mnc)`
+	cond_convert $f $g
+	IN="$IN $g"
+	let i++
+done
+
+
+# align images
+for f in $IN; do
+	O=${f}_to_`basename $REF`
+	[ -z "$VERBOSE" ] || echo estimating registration
+	flirt -in $f -ref $REF -out $O -omat ${O}.mat -nosearch -dof 12
+	[ -z "$VERBOSE" ] || echo applying registration
+	avscale ${O}.mat | grep -A4 Forward  | tail -n4 > $TDIR/f.mat
+	avscale ${O}.mat | grep -A4 Backward | tail -n4 > $TDIR/b.mat
+	flirt -in $f   -ref $REF -applyxfm -init $TDIR/f.mat -out $f
+	flirt -in $REF -ref $REF -applyxfm -init $TDIR/b.mat -out $REF
+done
+
+echo any key to start fslview
+read
+fslview $REF $f
+
+rm -r $TDIR
+exit 0
+
+
