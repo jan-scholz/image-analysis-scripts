@@ -1,0 +1,18 @@
+MICE SCRIPTS
+============
+
+This repository contains a number of simple scripts aimed at aiding image analysis
+at MICe
+
+
+INSTALLATION
+============
+
+Add the following lines to your $HOME/.bashrc
+
+# MICe scripts
+if [ -d "$HOME/bin/micescripts" ] ; then
+    PATH="$HOME/bin/micescripts:$PATH"
+fi
+
+
