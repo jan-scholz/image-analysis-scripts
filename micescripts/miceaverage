@@ -1,0 +1,48 @@
+#! /bin/bash
+# extracts volumes from a 4d file (time dimension) and averages them
+# useful for averaging b0-images
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) -a FIRST -n NVOLS -s SUFFIX FILE.."
+	echo "  -a FIRST     first volume (default: 0)"
+	echo "  -b LAST      last volume"
+	echo "  -n NVOLS     number of volumes (default: 1)"
+	echo "  -s SUFFIX    volsFIRST-LAST"    
+}
+
+
+while getopts i:v opt
+do
+    case "$opt" in
+      i)    INPUT="${OPTARG%/}";;
+  	  v)  VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+
+
+
+mincreshape -2 -quiet -clobber -dimrange time=0,5 ${m} tmp_${m}
+mincaverage -2 -quiet -clobber -avgdim time tmp_${m} ${m%.mnc}_b0.mnc
+
+
+mincsplit ()
+{
+        # mincsplit INPUT.MNC OUTDIR
+        MAX=`expr $(mincinfo -dimlength time $1) - 1`
+        mkdir -p $2
+
+        for i in `seq 0 $MAX`; do
+                mincreshape -2 -quiet -start $i -count 0 -clobber $1 $2/vol`printf "%02i" ${i}`.mnc
+                [ -z "$VERBOSE" ] || echo -n "."
+        done
+        [ -z "$VERBOSE" ] || echo `expr $MAX + 1`
+}
+
+
