@@ -4,21 +4,22 @@
 #
 # Copyright 2012, jan.scholz@phenogenomics.ca at MICe
 
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 
 usage ()
 {
-	echo "Usage: $(basename $0) -a FIRST -n NVOLS -s SUFFIX FILE.."
-	echo "  -a FIRST     first volume (default: 0)"
-	echo "  -b LAST      last volume"
-	echo "  -n NVOLS     number of volumes (default: 1)"
-	echo "  -s SUFFIX    volsFIRST-LAST"    
+	echo "Usage: $(basename $0) [-s SUFFIX] START N FILE.."
+	echo "  -s SUFFIX    suffix attached to original filename (default: FILE_START-END)"    
+	echo "  START        first volume"
+	echo "  N            number of volumes"
+	echo "  FILE         MINC file(s)"
 }
 
 
-while getopts i:v opt
+while getopts s:v opt
 do
     case "$opt" in
-      i)    INPUT="${OPTARG%/}";;
+      s)   SUFFIX="${OPTARG%/}";;
   	  v)  VERBOSE="-v";;
       \?)  usage; exit 1;;
     esac
@@ -26,23 +27,45 @@ done
 shift `expr $OPTIND - 1`
 
 
+[ $# -lt 3 ] && { usage; exit 1; }
 
 
-mincreshape -2 -quiet -clobber -dimrange time=0,5 ${m} tmp_${m}
-mincaverage -2 -quiet -clobber -avgdim time tmp_${m} ${m%.mnc}_b0.mnc
+START=$1; shift
+N=$1; shift
+FILES=$@
+
+END=$(($START + $N - 1))
+SUFFIX=${SUFFIX:-"_vols${START}-${END}"}
 
 
-mincsplit ()
-{
-        # mincsplit INPUT.MNC OUTDIR
-        MAX=`expr $(mincinfo -dimlength time $1) - 1`
-        mkdir -p $2
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
 
-        for i in `seq 0 $MAX`; do
-                mincreshape -2 -quiet -start $i -count 0 -clobber $1 $2/vol`printf "%02i" ${i}`.mnc
-                [ -z "$VERBOSE" ] || echo -n "."
-        done
-        [ -z "$VERBOSE" ] || echo `expr $MAX + 1`
-}
+
+for f in $FILES; do
+	[ `echo "$(mincinfo -attvalue time:length ${f}) <= $END" | bc -l` -ne 0 ] && { echo "ERROR: not enough volumes in file: $f"; exit 1; } 
+	OUT=${f%.mnc}${SUFFIX}.mnc
+	[ -z "$VERBOSE" ] || printf "averaging volumes %g to %g of file %s\n" $START $END $f
+	mincreshape -2 -quiet -clobber -dimrange time=${START},${N} ${f} $TDIR/${f}
+	mincaverage -2 -quiet -clobber -avgdim time $TDIR/${f} $OUT
+	[ -z "$VERBOSE" ] || echo "saving as: $OUT"
+done
+
+
+exit 0
+
+
+#mincsplit ()
+#{
+#        # mincsplit INPUT.MNC OUTDIR
+#        MAX=`expr $(mincinfo -dimlength time $1) - 1`
+#        mkdir -p $2
+#
+#        for i in `seq 0 $MAX`; do
+#                mincreshape -2 -quiet -start $i -count 0 -clobber $1 $2/vol`printf "%02i" ${i}`.mnc
+#                [ -z "$VERBOSE" ] || echo -n "."
+#        done
+#        [ -z "$VERBOSE" ] || echo `expr $MAX + 1`
+#}
 
 
