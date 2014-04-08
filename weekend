@@ -1,0 +1,29 @@
+#! /bin/bash
+# calculate the weekend scanning times
+
+usage ()
+{
+	echo "Usage: $(basename $0) START SCANTIME.."
+	echo
+	echo "EXAMPLE"
+	echo "weekend \"Friday 4pm\" \"15 hours\" \"15 hours\" \"13 hours\" \"13 hours\""
+}
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+SWITCHOVER="30 minutes"
+
+START="$1"; shift
+START=`date -d "$START"`
+
+for s in "$@"; do
+	echo "START: $START  (+$s)"
+	END=`date -d "$START + $s"`
+	echo "END:   $END"; echo
+	START=`date -d "$END + $SWITCHOVER"`
+done
+
+
+# weekend "friday 7am" "12 hours" "13 hours 30 minutes" "13 hours 30 minutes" "15 hours" "2 hours" "15 hours"
+
+
