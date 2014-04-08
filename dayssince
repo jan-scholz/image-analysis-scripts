@@ -1,1 +1,30 @@
-echo $((($(date +%s)-$(date +%s -d "oct 24"))/86400))
+#! /bin/bash
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-v] < FILE"
+	echo "       cat FILE | $(basename $0)"
+	echo "  -v   display dates"
+	echo
+	echo "supply a list of parsable dates, two dates per row, no white space within dates"
+	echo "E.g. Oct-25-2010 Jan-28-2011"
+	echo "      10/25/2010  01/28/2011"
+}
+
+[ "$1" == "-v" ] && VERBOSE="-v"
+
+if [ -t 0 ]; then
+    usage; exit 1
+else
+	while read LINE; do
+		l=($LINE)
+		DATE0=$(date +%s -d "${l[0]}") || exit 1
+		DATE1=$(date +%s -d "${l[1]}") || exit 1
+		[ -z "$VERBOSE" ] || echo -n "`date +"%d-%b-%Y" -d "@$DATE0"` `date +"%d-%b-%Y" -d "@$DATE1"` "
+		echo $(( (${DATE1}-${DATE0})/86400 ))
+	done
+fi
+
+
+# cat dates.txt | sed -e 's/\.\//-/g' -e 's/th\//-/g' | while read LINE; do l=($LINE); echo $((($(date +%s -d "${l[1]}")-$(date +%s -d "${l[0]}"))/86400)); done
+# echo $((($(date +%s)-$(date +%s -d "oct 24"))/86400))
