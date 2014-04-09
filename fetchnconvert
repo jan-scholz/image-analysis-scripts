@@ -37,6 +37,8 @@ print_info () {
 }
 
 	#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin;
+	# basket
+	# /projects/mice/jbishop/bin/vrecon -vmap fse_504_250_6_3 -shiftppe2 -croplpe -pmod fid vol
 set_library_path () {
 	for p in /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64 /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64 /projects/mice/jbishop/bin; do
 		if echo $LD_LIBRARY_PATH | grep $p > /dev/null 2> /dev/null; then
