@@ -10,7 +10,7 @@ usage ()
 
 cond_convert ()
 {
-	mincinfo $1 > /dev/null 2> /dev/null && { [ -z "$VERBOSE" ] || echo "converting $1"; mncconvert $1 $2 &> /dev/null; return; }
+	mincinfo $1 > /dev/null 2> /dev/null && { [ -z "$VERBOSE" ] || echo "converting $1"; miceconvert $1 $2 &> /dev/null; return; }
 	fslinfo  $1 > /dev/null && {       imcp $1 $2;              return; }
 	echo "ERROR: could not open file: $1"; exit 1
 }
@@ -33,7 +33,7 @@ shift `expr $OPTIND - 1`
 
 [ $# -lt 1 ] && { usage; exit 1; }
 
-which mncconvert > /dev/null || { echo "ERROR: could not find mncconvert"; exit 1; }
+which miceconvert > /dev/null || { echo "ERROR: could not find miceconvert"; exit 1; }
 
 
 TDIR=$TMPDIR/$$; mkdir -p $TDIR
