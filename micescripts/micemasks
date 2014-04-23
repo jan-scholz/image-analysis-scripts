@@ -1,0 +1,69 @@
+#! /bin/bash
+# prepares a directory containing atlas, mask, dilated mask and template
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-o OUTDIR] -b BASE"
+	echo "  -b BASE        mouse build model base"
+	echo "  -o OUTDIR      output directory (default: BASE_masks)"
+	echo "  -n             convert to nifti format"
+	#echo "  -t TEMPLATE    the average, as a background for viewing"
+	#echo "  -a ATLAS       labeled brain structures, used to generate the masks"
+}
+
+
+while getopts t:b:o:nv opt
+do
+    case "$opt" in
+      b)  MBMBASE="${OPTARG}";;
+      o)   OUTDIR="${OPTARG}";;
+      #t) TEMPLATE="${OPTARG}";;
+      #a)    ATLAS="${OPTARG}";;
+  	  n)    NIFTI=true;;
+  	  v)  VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+
+[ -z "$MBMBASE" ] && { usage; exit 1; }
+
+OUTDIR=${OUTDIR:-$PWD/${MBMBASE}_masks}
+mkdir -p $OUTDIR
+
+[ -z "$TEMPLATE" ] && TEMPLATE=`ls ${MBMBASE}_nlin/nlin-?.mnc| tail -n1`
+ATLAS=${ATLAS:-${MBMBASE}_resampled_atlas/resampled_atlas.mnc}
+
+[ -f "$TEMPLATE" ] || { echo "ERROR: could not find template: $TEMPLATE"; exit 1; }
+[ -f "$ATLAS" ]    || { echo "ERROR: could not find atlas: $ATLAS"; exit 1; }
+
+
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+
+autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
+mincmorph -clobber -successive 'B[0.5:999]DDDDDDEEEEEE' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
+autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+
+autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
+mincmorph -clobber -successive 'B[0.5:999]DDDDDD' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
+autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+
+cp ${VERBOSE} $ATLAS $OUTDIR/atlas.mnc
+cp ${VERBOSE} $TEMPLATE $OUTDIR/template.mnc
+
+
+if [ ! -z ${NIFTI} ]; then
+	which miceconvert || { echo "ERROR: could not convert to nifti, miceconvert not found"; exit 1; }
+	for f in $OUTDIR/mask.mnc  $OUTDIR/mask_dil.mnc $OUTDIR/atlas.mnc $OUTDIR/template.mnc; do
+		miceconvert $f $OUTDIR/nii/`basename $f` || { echo "Warning: could not convert to nifti, skipping conversion"; exit 1; }
+	done
+fi
+
+
