@@ -1,0 +1,70 @@
+#! /bin/bash
+#
+# prints file type for minc and nifti files and tries to open them
+#
+# Checks each file if it is one of the following:
+#    1) NetCDF Data Format data
+#    2) Hierarchical Data Format (version 5) data
+#    3) gzip compressed data
+#
+# If so, it will try to open it as MINC (1,2) or NIFTI (3)
+
+
+DEPENDENCIES="mincinfo fslinfo"
+
+for f in $DEPENDENCIES; do
+	which $f > /dev/null || { echo "ERROR: failed to find dependency: $f"; exit 1; }
+done
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) FILE.."
+	echo "test whether minc files can be opend"
+}
+
+
+linkedfile ()
+{
+	if [ -h "$1" ]; then
+		if which readlink >/dev/null; then
+			TARGET=`readlink $1`
+			[ "${TARGET:0:1}" = "/" ] || { (cd `dirname $1`; echo $PWD/$TARGET); break; }
+			echo $TARGET
+		else
+			echo "ERROR: can't handle links without 'readlink'" > /dev/stderr
+			exit 1
+		fi
+	fi
+}
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+FILES=$@
+
+
+for IN in $FILES; do
+
+	while [ -h "$IN" ]; do
+		IN=`linkedfile $IN`
+	done
+
+
+	case `file -b $IN` in
+						  "NetCDF Data Format data") mincinfo $IN >/dev/null && echo "MINC-1";;
+		"Hierarchical Data Format (version 5) data") mincinfo $IN >/dev/null && echo "MINC-2";;
+							"gzip compressed data"*) fslinfo  $IN >/dev/null && fslinfo $IN | awk '/file_type/ {print $2}';; 
+												  *) echo "ERROR: cannot open file $IN" > /dev/stderr; exit 1;;
+	esac
+done
+
+# exit with last exit status
+
+#	if [ -h "$IN" ]; then
+#		if which readlink >/dev/null; then
+#			IN=`readlink $IN`
+#		else
+#			echo "ERROR: can't handle links without 'readlink'" > /dev/stderr
+#			exit 1
+#		fi
+#	fi
