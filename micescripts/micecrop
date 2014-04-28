@@ -1,0 +1,116 @@
+#! /bin/bash
+#
+# crops images to smaller FOV based on registered template
+# copyright 2012-07-11 jan.scholz@phenogenomics.ca @ MICe
+#
+#
+# micecrop -t NRXN1a_template_mask -m "10 10 10" rot21_hr_mask
+
+usage ()
+{
+	echo "Usage: $(basename $0) -t TEMPLATEMASK -m \"XMARG YMARG ZMARG\" MASK.."
+	echo "  -t TEMPLATEMASK     mask of registration target"
+	echo "  -m XMARG            add XMARG to x-direction on both sides"
+	echo ""
+	echo " MASK..               masks in native space, need to be named BASE_mask,"
+	echo "                      output will be applied to BASE to produce BASE_crop"
+	echo
+	echo "WARNING: DOES NOT LOOK AT MM versus VOXEL, assumes TEMPLATEMASK AND MASK.. have same resolution"
+	echo
+	echo "EXAMPLE"
+	echo "  micecrop -t NRXN1a_template_mask -m "41 20 20" rot??_hr_mask.nii.gz | parallel -j5 -v"
+}
+
+
+while getopts t:m:v opt
+do
+	case "$opt" in
+		t)  TMASK="$OPTARG";;
+		m)  MARGINS="$OPTARG";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+MARGINS=(${MARGINS:-0 0 0})
+[ "${#MARGINS[@]}" -lt 3 ] && { echo "ERROR: margins set incorrectly" > /dev/stderr; exit 1; }
+
+
+TFOV=(`printf "%.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f" $(fslstats $TMASK -w)`)
+
+TFOVX=$(( ${TFOV[1]} + ${MARGINS[0]} ))
+TFOVY=$(( ${TFOV[3]} + ${MARGINS[1]} ))
+TFOVZ=$(( ${TFOV[5]} + ${MARGINS[2]} ))
+
+echo bounding box: $TFOVX $TFOVY $TFOVZ > /dev/stderr
+
+
+TSIZES=(`fslsize $TMASK | awk '/^dim[123]/ {print $2}'`)
+
+[ ${TSIZES[0]} -lt $TFOVX ] && { echo "Warning: bounding box larger than template x-dimension ${TSIZES[0]} < $TFOVX" > /dev/stderr; }
+[ ${TSIZES[1]} -lt $TFOVY ] && { echo "Warning: bounding box larger than template y-dimension ${TSIZES[1]} < $TFOVY" > /dev/stderr; }
+[ ${TSIZES[2]} -lt $TFOVZ ] && { echo "Warning: bounding box larger than template z-dimension ${TSIZES[2]} < $TFOVZ" > /dev/stderr; }
+
+
+for f in $@; do
+
+	[ "`imtest $f`" -eq 0 ] && { echo "ERROR: could not read file $f" > /dev/stderr; exit 1; }
+	f=`imglob $f`
+
+	COG=(`printf "%.0f %.0f %.0f" $(fslstats $f -C)`)
+
+	SIZES=(`fslsize $f | awk '/^dim[123]/ {print $2}'`)
+	XSIZE=${SIZES[0]}
+	YSIZE=${SIZES[1]}
+	ZSIZE=${SIZES[2]}
+
+	[ $XSIZE -lt $TFOVX ] && { echo "ERROR: x-dimension of $f too small" > /dev/stderr; exit 1; }
+	[ $YSIZE -lt $TFOVY ] && { echo "ERROR: y-dimension of $f too small" > /dev/stderr; exit 1; }
+	[ $ZSIZE -lt $TFOVZ ] && { echo "ERROR: z-dimension of $f too small" > /dev/stderr; exit 1; }
+
+
+FOV=(`printf "%.0f %.0f %.0f %.0f %.0f %.0f %.0f %.0f" $(fslstats $f -w)`)
+
+#	XSTART=$(( ${COG[0]} - $TFOVX / 2 ))
+#	  XEND=$(( ${COG[0]} + $TFOVX / 2 ))
+#
+#	YSTART=$(( ${COG[1]} - $TFOVY / 2 ))
+#	  YEND=$(( ${COG[1]} + $TFOVY / 2 ))
+#
+#	ZSTART=$(( ${COG[2]} - $TFOVZ / 2 ))
+#	  ZEND=$(( ${COG[2]} + $TFOVZ / 2 ))
+
+	XSTART=$(( ${FOV[0]} + ${FOV[1]} / 2 - $TFOVX / 2 ))
+	  XEND=$(( ${FOV[0]} + ${FOV[1]} / 2 + $TFOVX / 2 ))
+	XDELTA=$(( $XEND - $XSTART + 1 ))
+
+	YSTART=$(( ${FOV[2]} + ${FOV[3]} / 2 - $TFOVY / 2 ))
+	  YEND=$(( ${FOV[2]} + ${FOV[3]} / 2 + $TFOVY / 2 ))
+	YDELTA=$(( $YEND - $YSTART + 1 ))
+
+	ZSTART=$(( ${FOV[4]} + ${FOV[5]} / 2 - $TFOVZ / 2 ))
+	  ZEND=$(( ${FOV[4]} + ${FOV[5]} / 2 + $TFOVZ / 2 ))
+	ZDELTA=$(( $ZEND - $ZSTART + 1 ))
+
+	[ $XSTART -lt 0 ] && { XSTART=0; XEND=$(( $TFOVX - 1 )); echo "reset xstart to $XSTART for $f" > /dev/stderr; }
+	[ $YSTART -lt 0 ] && { YSTART=0; YEND=$(( $TFOVY - 1 )); echo "reset ystart to $YSTART for $f" > /dev/stderr; }
+	[ $ZSTART -lt 0 ] && { ZSTART=0; ZEND=$(( $TFOVZ - 1 )); echo "reset zstart to $ZSTART for $f" > /dev/stderr; }
+
+	[ $XEND -ge $XSIZE ] && { XEND=$(( $XSIZE - 1 )); XSTART=$(( $XEND - $TFOVX + 1 )); echo "reset xend to $XEND for $f" > /dev/stderr; }
+	[ $YEND -ge $YSIZE ] && { YEND=$(( $YSIZE - 1 )); YSTART=$(( $YEND - $TFOVY + 1 )); echo "reset yend to $YEND for $f" > /dev/stderr; }
+	[ $ZEND -ge $ZSIZE ] && { ZEND=$(( $ZSIZE - 1 )); ZSTART=$(( $ZEND - $TFOVZ + 1 )); echo "reset zend to $ZEND for $f" > /dev/stderr; }
+
+	[ $XSTART -lt 0 -o $XEND -gt $XSIZE ] && { echo "ERROR: x out of range for $f" > /dev/stderr; exit 1; }
+	[ $YSTART -lt 0 -o $YEND -gt $YSIZE ] && { echo "ERROR: y out of range for $f" > /dev/stderr; exit 1; }
+	[ $ZSTART -lt 0 -o $ZEND -gt $ZSIZE ] && { echo "ERROR: z out of range for $f" > /dev/stderr; exit 1; }
+
+
+	echo "fslroi ${f%_mask} `basename ${f%_mask}_crop` $XSTART $(( $XEND - $XSTART )) $YSTART $(( $YEND - $YSTART )) $ZSTART $(( $ZEND - $ZSTART )) 0 1"
+
+done
+
+
+
