@@ -104,8 +104,8 @@ for g in \$ALL; do
 	convert_xfm -omat \${g%_init}.mat -concat \$OUTDIR/$TARGETMAT \${g}.mat;
 	flirt -in \`basename \${g%_to_target_init}\` -ref $REF -applyxfm -init \${g%_init}.mat -out \${g%_init} -interp sinc;
 	#optional back-projection of nudge mask
-	${BACKPROJ}convert_xfm -omat \${g%_init}_inv.mat -inverse \${g%_init}.mat
-	${BACKPROJ}flirt -in ${REF}_mask -ref \`basename \${g%_to_target_init}\` -applyxfm -init \${g%_init}_inv.mat -out \${g%_to_target_init}_mask -interp nearestneighbour
+	${BACKPROJ}convert_xfm -omat \${g%_init}_inv.mat -inverse \${g%_init}.mat;
+	${BACKPROJ}flirt -in ${REF}_mask -ref \`basename \${g%_to_target_init}\` -applyxfm -init \${g%_init}_inv.mat -out \${g%_to_target_init}_mask -interp nearestneighbour;
 done
 fslmerge -t \$OUTDIR/all \${ALL//_init}
 echo "merged \`fslnvols \$OUTDIR/all\` images"
@@ -184,9 +184,11 @@ fnirt --in=\$OUTDIR/template_init --ref=$REF ${REFMASK} --aff=${TARGETTRANS}.mat
 TRANS2="--postmat=${TARGETTRANS}.mat"
 [ \`imtest ${TARGETTRANS}_warp\` = 1 ] && TRANS2="--warp2=${TARGETTRANS}_warp"
 for g in \$ALL; do
+	INVWARPREF=\`imglob \$(basename \${g%_to_target_init}_mask)\`;
+	INVWARPREF=\${INVWARPREF:-\${g%_to_target_init}};
 	convertwarp --ref=${REF} --warp1=\${g}_warp \$TRANS2 --out=\${g%_init}_warp;
-	${BACKPROJ}invwarp -w \${g%_init}_warp -o \${g%_init}_inv_warp -r \`basename \${g%_to_target_init}\`
-	${BACKPROJ}applywarp -i ${REF}_mask -r \`basename \${g%_to_target_init}\` -w \${g%_init}_inv_warp -o \${g%_to_target_init}_mask --interp=nn
+	${BACKPROJ}invwarp -w \${g%_init}_warp -o \${g%_init}_inv_warp -r \`basename \${INVWARPREF}\` --force
+	${BACKPROJ}applywarp -i ${REF}_mask -r \`basename \${INVWARPREF}\` -w \${g%_init}_inv_warp -o \${g%_to_target_init}_mask --interp=nn
 done
 # final template
 for g in \$ALL; do applywarp -i \`basename \${g%_to_target_init}\` -r $REF -w \${g%_init}_warp -o \${g%_init} --interp=sinc; done
@@ -365,6 +367,7 @@ exit 0
 --biaslambda=500
 ##      If =1, ref image is used to calculate derivatives. Default =0
 --refderiv=0
+--numprec=float
 # END FNIRT NL01
 
 ###############################################################################
@@ -389,7 +392,33 @@ exit 0
 --biasres=10,10,10
 --biaslambda=500
 --refderiv=0
+--numprec=float
 # END FNIRT NL02
+
+###############################################################################
+# START FNIRT NLALL
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,1,1,1
+--miter=5,5,5,5
+--infwhm=0.3,0.2,0.2,0.15
+--reffwhm=0.3,0.2,0.2,0.1
+--lambda=9,9,6,3
+--estint=1,1,1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL
 
 ###############################################################################
 # START FNIRT NL03
@@ -413,6 +442,7 @@ exit 0
 --biasres=10,10,10
 --biaslambda=500
 --refderiv=0
+--numprec=float
 # END FNIRT NL03
 
 ###############################################################################
@@ -437,7 +467,58 @@ exit 0
 --biasres=10,10,10
 --biaslambda=500
 --refderiv=0
+--numprec=float
 # END FNIRT NL04
+
+###############################################################################
+# START FNIRT NLALL2
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,1,1,1,1
+--miter=5,5,5,5,5
+--infwhm=0.3,0.2,0.2,0.15,0.1
+--reffwhm=0.3,0.2,0.2,0.1,0.0
+--lambda=9,9,6,3,1
+--estint=1,1,1,1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL2
+
+###############################################################################
+# START FNIRT NLALL3
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,1,1,1,1,1
+--miter=5,5,5,5,5,5
+--infwhm=0.3,0.2,0.2,0.15,0.1,0.1
+--reffwhm=0.3,0.2,0.2,0.1,0.0,0.0
+--lambda=9,9,6,3,1,0.2
+--estint=1,1,1,1,0,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL3
 
 ###############################################################################
 # START FNIRT temp2temp
@@ -530,4 +611,166 @@ exit 0
 --biaslambda=500
 --refderiv=0
 # END FNIRT temp2temp3
+
+
+
+
+
+
+
+
+###############################################################################
+# HR
+###############################################################################
+
+###############################################################################
+# START FNIRT temp2temp_hr
+--applyrefmask=1,0
+--applyinmask=1,0
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2
+--miter=5,5
+--infwhm=0.2,0.05
+--reffwhm=0.2,0.05
+--lambda=6,3
+--estint=1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT temp2temp_hr
+
+###############################################################################
+# START FNIRT temp2temp2_hr
+--applyrefmask=1,0
+--applyinmask=1,0
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2
+--miter=5,5
+--infwhm=0.2,0.05
+--reffwhm=0.2,0.05
+--lambda=3,1
+--estint=1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT temp2temp2_hr
+
+###############################################################################
+# START FNIRT temp2temp3_hr
+--applyrefmask=1,1,1
+--applyinmask=1,1,1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2,2
+--miter=5,5,5
+--infwhm=0.2,0.1,0.0
+--reffwhm=0.2,0.1,0.0
+--lambda=3,1,0.2
+--estint=1,1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT temp2temp3_hr
+
+###############################################################################
+# START FNIRT NLALL1_hr
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2
+--miter=5,5
+--infwhm=0.2,0.1
+--reffwhm=0.2,0.1
+--lambda=6,3
+--estint=1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL1_hr
+
+############################################################################### 2.25GB
+# START FNIRT NLALL2_hr
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2,2
+--miter=5,5,5
+--infwhm=0.2,0.1,0.05
+--reffwhm=0.2,0.1,0.00
+--lambda=6,3,1
+--estint=1,1,1
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL2_hr
+
+###############################################################################
+# START FNIRT NLALL3_hr
+--applyrefmask=1
+--applyinmask=1
+--imprefm=1
+--impinm=1
+--imprefval=0
+--impinval=0
+--subsamp=2,2,2,1
+--miter=5,5,5,5
+--infwhm=0.2,0.1,0.05,0.05
+--reffwhm=0.2,0.1,0.00,0.00
+--lambda=6,3,1,0.2
+--estint=1,1,1,0
+--warpres=0.5,0.5,0.5
+--ssqlambda=1
+--regmod=bending_energy
+--intmod=global_non_linear_with_bias
+--intorder=5
+--biasres=10,10,10
+--biaslambda=500
+--refderiv=0
+--numprec=float
+# END FNIRT NLALL3_hr
+
 
