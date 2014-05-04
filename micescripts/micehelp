@@ -1,0 +1,1 @@
+fv /projects/mice/jscholz/rot/reg_hr/trash/hr_masks/nii/template `echo unscaled-fwhm0-5/design_behav_*_tfce_corrp_tstat1.nii.gz | sed 's/\([^ ][^ ]*\)/\1 -b 0.95,1/g'`
