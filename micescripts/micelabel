@@ -1,0 +1,71 @@
+#! /bin/bash
+# given a table find label name from label number and vice versa
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+
+TABLE=/projects/mice/jlerch/cortex-label/c57_brain_atlas_labels.csv
+
+usage ()
+{
+	echo "Usage: $(basename $0) LABEL.."
+	echo "  LABEL    one or several numbers or strings refering to label numbers or names"
+	echo "           (default: $TABLE)"
+}
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+
+[ -f "$TABLE" ] || { echo "ERROR: Could not find table: $TABLE"; exit 1; }
+
+
+
+COLNAMES=`head -n1 $TABLE`
+
+cat $TABLE | while read LINE; do
+	STRUCTURE=`echo $LINE | awk -F, '{print $2}'`
+	for i in $@; do
+		[ "`echo $LINE | awk -F, '{print $3}'`" == "$i" ] && printf "found \"%g\" in \"%s\" of \"%s\"\n" $i "`echo $COLNAMES | awk -F, '{print $2}'`" "$STRUCTURE"
+		[ "`echo $LINE | awk -F, '{print $4}'`" == "$i" ] && printf "found \"%g\" in \"%s\" of \"%s\"\n" $i "`echo $COLNAMES | awk -F, '{print $3}'`" "$STRUCTURE"
+
+		if `echo $LINE | awk -F, '{print $2}' | grep $i > /dev/null`; then
+			printf "found \"%s\" in \"%s\" with \"%s\" \"%g\" and \"%s\" \"%g\" \n" $i "$STRUCTURE" "`echo $COLNAMES | awk -F, '{print $2}'`" "`echo $LINE | awk -F, '{print $3}'`"  "`echo $COLNAMES | awk -F, '{print $3}'`"  "`echo $LINE | awk -F, '{print $4}'`"
+		fi
+
+	done
+done
+
+
+
+
+exit 0
+
+
+
+# the following doesn't work, because python gets the columnnames wrong
+#
+#python -c "
+#import sys
+#import csv
+#
+#input=\"$1\"
+#
+#checkLabelNr=input.isdigit()
+#
+#f = open(\"$TABLE\", 'rt')
+#try:
+#    reader = csv.DictReader(f)
+#    colnames = reader.fieldnames
+#    for row in reader:
+#		if checkLabelNr:
+#			if input in row.values():
+#				print row
+#finally:
+#    f.close()
+#
+#
+#print colnames
+#sys.exit(1)
+#"
+#
