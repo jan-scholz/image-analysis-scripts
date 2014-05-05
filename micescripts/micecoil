@@ -1,0 +1,42 @@
+#! /bin/bash
+#
+# prints filename and coil number
+#
+# Tries to extract the coil number from the mincheader for each input file.
+# Fails if the file could not be opened or does not contain a vnmr:coil attribute.
+# The coil number can be zero-padded with the -w flag.
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+#
+# author: jan.scholz@phenogenomics.ca
+# category: misc, information
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) MINCFILE.."
+	echo "Prints filename and coil number if present in header"
+	echo "  -w WIDTH    zero-pad output (default: 1)"
+}
+
+
+while getopts w: opt
+do
+    case "$opt" in
+      w)   WIDTH="${OPTARG}";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+
+WIDTH=${WIDTH:-1}
+
+for f in $@; do
+	mincheader $f | grep vnmr:coil > /dev/null || { echo "ERROR: could not open or find attribute vnmr:coil in file: $f"; exit 1; }
+	COIL=`mincinfo -attvalue vnmr:coil $f`
+	printf "%s %0${WIDTH}g\n" $f $COIL
+done
+
