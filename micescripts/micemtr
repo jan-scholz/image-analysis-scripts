@@ -1,0 +1,98 @@
+#! /bin/bash
+# create MTR images from scanner output
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set, run: export TMPDIR=/tmp"; exit 1; }
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-o OUTBASE] INDIR.."
+	echo "  -o OUTBASE      output files get names OUTBASE.COIL.mnc (default: mtr)"
+	echo "  INDIR..         one or several directories that contain fid files"
+	echo
+	echo "  -x              debug, keep component images"
+}
+
+
+set_library_path () {
+	for p in /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64 /projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64 /projects/mice/jbishop/bin; do
+		if echo $LD_LIBRARY_PATH | grep $p > /dev/null 2> /dev/null; then
+			:
+		else
+			export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$p"
+			[ -z "$VERBOSE" ] || echo "adding to \$LD_LIBRARY_PATH: $p"
+		fi
+	done
+}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+while getopts o:xv opt
+do
+	case "$opt" in
+		o)  OUTBASE="$OPTARG";;
+		x)  DEBUG=1;;
+		v)  VERBOSE="-v";;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+OUTBASE=${OUTBASE:-mtr}
+
+
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+
+SINK=/dev/null
+[ -z "$VERBOSE" ] || SINK=/dev/stdout
+
+
+for INDIR in $@; do
+
+	mkdir -p $TDIR/{ref,y}
+
+	
+	for f in $INDIR/fid{0,1,2}n $INDIR/fid{0,1,2}y $INDIR/procpar; do
+		[ -f "$f" ] || { echo "ERROR: could not find file $f"; exit 1; }
+	done
+
+	cp $INDIR/fid0n $TDIR/ref/fid0
+	cp $INDIR/fid1n $TDIR/ref/fid1
+	cp $INDIR/fid2n $TDIR/ref/fid2
+	cp $INDIR/procpar $TDIR/ref
+
+	cp $INDIR/fid0y $TDIR/y/fid0
+	cp $INDIR/fid1y $TDIR/y/fid1
+	cp $INDIR/fid2y $TDIR/y/fid2
+	cp $INDIR/procpar $TDIR/y
+
+	set_library_path
+
+	(cd $TDIR/ref; /projects/mice/jbishop/bin/vrecon -rfchop -shift -fermi fid vol >$SINK;)
+	(cd $TDIR/y; /projects/mice/jbishop/bin/vrecon -rfchop -shift -fermi fid vol >$SINK;)
+
+	for ((i=1;i<17;i++)); do
+		OUT=`printf "%s.%02i" $OUTBASE $i`
+		minccalc -quiet -expression "A[0]>100 ? result=clamp((A[0]-A[1])/A[0],0,0.7): result=0" $TDIR/ref/vol.${i}.mnc $TDIR/y/vol.${i}.mnc ${OUT}.mnc -clobber && { [ -z "$VERBOSE" ] || echo "saved  ${OUT}.mnc"; }
+		if [ ! -z "$DEBUG" ]; then
+			cp $TDIR/ref/vol.${i}.mnc ${OUT}.ref.mnc
+			cp $TDIR/y/vol.${i}.mnc   ${OUT}.ima.mnc
+		fi
+	done
+
+	rm -r $TDIR/[ny]
+
+done
+
+exit 0
+
