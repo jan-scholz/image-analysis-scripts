@@ -1,0 +1,258 @@
+#! /bin/bash
+# process dti images, uses FSL
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+# Thanks to Matthijs for bug hunting
+
+#/micehome/matthijs/32-bit/bin/distortion_correction_november2007.pl -sge-resources all.q,bigmem.q,diddl.q -output-dir discorr ../raw/dti/bdnf*_b0.mnc
+#
+#
+#. /projects/mice/share/arch/linux64/quarantine_toothless/environment
+#
+# OUTDIR=b0
+# INITMODEL=/micehome/jscholz/resources/registration/ANTS/Native_Diff_Model/native
+# NLINPROT="-nlin-protocol /micehome/jscholz/resources/registration/ANTS/nlin-protocol-mincANTS_diff.pl"
+#
+# MICe-build-model.pl -sge -sge-queue bigmem.q,all.q,diddl.q -pipeline-name $OUTDIR -init-model $INITMODEL -lsq12 -nlin -nlin-stats -nlin-registration-method mincANTS $NLINPROT discorr/*.mnc
+#
+
+
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
+DEPENDENCIES="micetest micecoil micemasks dtifit bedpostx"
+DIFFBIASDEFAULT=/home/jscholz/resources/diffusion/bias35_108cart
+BVECSDEFAULT=/micehome/jscholz/resources/diffusion/bfiles35
+#DTIMASKDEFAULT=mask_dil.mnc
+
+
+for f in $DEPENDENCIES; do
+	which $f > /dev/null || { echo "ERROR: failed to find dependency: $f"; exit 1; }
+done
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) OPTION FILE.."
+	echo "  -c DIFFBIASDIR     correct diffusion data with water_COIL.mnc and water_COIL_mask.mnc"
+	echo "  -C                 correct with default: $DIFFBIASDEFAULT"
+	echo
+	echo "  -m MASK            back-transform masks, requires -b MODELBASEDIR"
+	#echo "  -M DTIMASKDIR      use masks in DTIMASKDIR, named as FILE_mask (NOT IMPLEMENTED!)"
+	echo
+	echo "  -b MODELBASEDIR    MiceBuildModel base. The inputs to the registration were named FILE_b0"
+	echo "                     (to create FILE_b0, run the the following command in the direcory that"
+	echo "                     also contains FILE: miceaverage -s _b0 0 5 FILE. Then run MiceBuildModel"
+	echo "                     on FILE_b0)"
+	echo
+	echo "  -d BVECSDIR        run dtifit, BVECSDIR contain files: bvecs and bvals"
+	echo "  -D                 run dtifit, with bvecs and bvals from $BVECSDEFAULT"
+	echo
+	echo "  -x                 model crossing fibres, ie bedpostX"
+	echo
+	echo "  -t MOD             apply transform to images of modality MOD (e.g. FA), requires -b MODELBASEDIR"
+	echo
+	echo " FILE..              4D diffusion data (concatenated in time dimension)"
+}
+
+
+while getopts c:Cm:Mb:d:Dxt:v opt
+do
+    case "$opt" in
+      c)  DIFFBIASDIR="${OPTARG%/}";    BUSY=1;;
+      C)  DIFFBIASDIR=$DIFFBIASDEFAULT; BUSY=1;;
+	  m)  DTIMASK="${OPTARG}";          BUSY=1;;
+	  #M)  DTIMASKDIR=";;
+      b)  MBMBASE=${OPTARG};            BUSY=1;;
+      d)  BVECSDIR=${OPTARG};           BUSY=1;;
+      D)  BVECSDIR=$BVECSDEFAULT;       BUSY=1;;
+      x)  XFIBRES=true;                 BUSY=1;;
+      t)  APPLY2MOD=${OPTARG};            BUSY=1;;
+  	  v)  VERBOSE="-v";;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+[ -z "$BUSY" ] && { echo "Warning: nothing to do, you must select an option"; exit 1; }
+
+
+FILES=$@
+micetest $FILES >/dev/null || exit 1
+
+
+###############################################################################
+# DIFFUSION BIAS CORRECTION
+###############################################################################
+if [ ! -z "$DIFFBIASDIR" ]; then
+
+	# check for diffusion bias correction data and masks
+	COILS=`micecoil -w 2 $FILES | awk '{print $2}' | sort | uniq`
+	for c in $COILS; do
+		for f in  coil${c}.mnc coil${c}_mask.mnc; do
+			[ -f $DIFFBIASDIR/$f ] || { echo "Could not find diffusion bias correction data: $DIFFBIASDIR/$f"; exit 1; }
+		done
+	done
+
+	[ -z "$VERBOSE" ] || echo "correcting diffusion gradient bias in data with: $DIFFBIASDIR"
+
+	# correct original data and convert to nifti
+	for f in $FILES; do
+		c=`micecoil -w 2 $f | awk '{print $2}'`
+		echo "diffbias -i $DIFFBIASDIR/coil${c}.mnc -m $DIFFBIASDIR/coil${c}_mask.mnc -d $f -o `basename $f .mnc`_corr.mnc; miceconvert  `basename $f .mnc`_corr.mnc  `basename $f .mnc`/nii/data";
+	done
+
+fi
+
+
+###############################################################################
+# DTI mask
+###############################################################################
+if [ ! -z "$DTIMASK" ]; then
+
+	[ -z "${MBMBASE}" ] && { echo "ERROR: MiceBuildModel base directory not specified"; exit 1; }
+	[ -d "${MBMBASE}_processed" ] || { echo "ERROR: could not find directory: ${MBMBASE}_processed"; exit 1; }
+
+	mkdir -p atlas
+
+	# copy mask
+	if [ ! "$DTIMASK" = "atlas/dtimask.mnc" ]; then
+		cp $VERBOSE $DTIMASK atlas/dtimask.mnc || { echo "ERROR: could not find dti mask: $DTIMASK"; exit 1; }
+	fi
+
+	# copy template if present
+	TMP=(${MBMBASE}_nlin/nlin-?.mnc)
+	TMP=${TMP[${#TMP[@]}-1]}
+	[ -f "$TMP" ] && { [ -z "$VERBOSE" ] || echo "Found template \"$TMP\""; cp $VERBOSE $TMP atlas/template.mnc; }
+
+	# convert to nifti
+	for f in atlas/*.mnc; do
+		miceconvert $f atlas/nii/`basename $f` > /dev/null || { echo "ERROR: failed to convert dti mask to nifti"; exit 1; }
+	done
+
+	MASKRANGE=`printf "%.0f %.0f\n" $(fslstats atlas/nii/dtimask.nii.gz -R)`
+	[ `echo $MASKRANGE | awk '{print $1}'` -lt 0 ] && { echo "Warning: check mask range: $MASKRANGE. Should be 0 1." > /dev/stderr; exit 1; }
+	[ `echo $MASKRANGE | awk '{print $2}'` -gt 1 ] && { echo "Warning: check mask range: $MASKRANGE. Should be 0 1." > /dev/stderr; exit 1; }
+
+	###############################################################################
+	# BACK-PROJECTING MASKS
+	###############################################################################
+	[ -z "$VERBOSE" ] || echo "back projecting masks"
+
+	# 2007 is the distortion correction for the insert coil
+	COILCORRDIR=/home/jscholz/resources/registration/coilcorr/2007
+
+	for f in $FILES; do
+		XFM="${MBMBASE}_processed/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected/transforms/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected-from-native.xfm"	  
+
+		# A) concatenate distortion correction and template registration
+		# B) apply transformation 
+		# C) convert mask to nifti 
+		# D) binarize image (bug in mnc2nii)
+		A="xfmconcat -clobber -verbose $COILCORRDIR/coil`micecoil $f | awk '{print $2}'`.xfm $XFM ${XFM%.xfm}+discorr.xfm"
+		B="mincresample -2 -quiet -clobber -nearest_neighbour -like `basename $f .mnc`_corr.mnc -invert_transformation -transformation ${XFM%.xfm}+discorr.xfm atlas/dtimask.mnc `basename ${f%.mnc}`/nodif_brain_mask.mnc"
+		C="miceconvert `basename ${f%.mnc}`/nodif_brain_mask.mnc `basename ${f%.mnc}`/nii/nodif_brain_mask"
+		D="fslmaths `basename ${f%.mnc}`/nii/nodif_brain_mask -thr 10e-8 `basename ${f%.mnc}`/nii/nodif_brain_mask"
+
+		echo "$A;$B;$C;$D"
+	done
+
+elif [ ! -z "$DTIMASKDIR" ]; then
+	echo "not implemented, should copy all individual masks to individual directories"
+	echo "depending on nifti or minc"
+fi
+
+
+###############################################################################
+# DTI
+###############################################################################
+if [ ! -z "$BVECSDIR" ]; then
+
+	[ -f "$BVECSDIR/bvals" ] || { echo "ERROR: could not fid bvals: $BVECSDIR/bvals"; exit 1; }
+	[ -f "$BVECSDIR/bvecs" ] || { echo "ERROR: could not fid bvecs: $BVECSDIR/bvecs"; exit 1; }
+
+	# copy bvals and bvecs
+	for f in $FILES; do
+		d=`basename $f .mnc`/nii/
+		cp $VERBOSE $BVECSDIR/{bvals,bvecs} $d/ || { echo "ERROR: could not copy bvecs/bvals"; exit 1; }
+	done
+
+	[ `fslnvols $d/data`          -eq `cat $d/bvals | wc -w` ] || { echo "ERROR: number of volumes do not match bvals"; exit 1; }
+	[ `head -n1 $d/bvecs | wc -w` -eq `cat $d/bvals | wc -w` ] || { echo "ERROR: number of bvecs do not match bvals"; exit 1; }
+
+
+	for f in $FILES; do
+		d=`basename $f .mnc`/nii
+		[ `imtest $d/data`             = 0 ] && { echo "ERROR: $d/data not found"; exit 1; }
+		[ `imtest $d/nodif_brain_mask` = 0 ] && { echo "ERROR: $d/nodif_brain_mask not found"; exit 1; }
+
+		DTIFIT="dtifit -k $d/data.nii.gz -m $d/nodif_brain_mask -o $d/dti -r $d/bvecs -b $d/bvals --sse > /dev/null"
+		RD="fslmaths $d/dti_L2 -add $d/dti_L3 -div 2 $d/dti_RD"
+
+		echo "$DTIFIT; $RD"
+	done
+
+
+fi
+
+
+###############################################################################
+# XFIBRES
+###############################################################################
+if [ ! -z "$XFIBRES" ]; then
+
+	for f in $FILES; do
+		d=`basename $f .mnc`/nii
+		[ -f "$d/bvals" ]                    || { echo "ERROR: could not find $d/bvals"; exit 1; }
+		[ -f "$d/bvecs" ]                    || { echo "ERROR: could not find $d/bvecs"; exit 1; }
+		[ `imtest $d/data`             = 0 ] && { echo "ERROR: could not find $d/data"; exit 1; }
+		[ `imtest $d/nodif_brain_mask` = 0 ] && { echo "ERROR: could not find $d/nodif_brain_mask"; exit 1; }
+		echo "cd $d/..; bedpostx nii; cd -"
+	done
+
+
+fi
+
+
+###############################################################################
+# APPLY2MOD
+###############################################################################
+if [ ! -z "$APPLY2MOD" ]; then
+
+	[ -z "${MBMBASE}" ] && { echo "ERROR: MiceBuildModel base directory not specified"; exit 1; }
+	[ -d "${MBMBASE}_processed" ] || { echo "ERROR: could not find directory: ${MBMBASE}_processed"; exit 1; }
+
+	COILCORRDIR=/home/jscholz/resources/registration/coilcorr/2007/
+	INTERPOLATION="-sinc"                                   # -trilinear -tricubic -nearest_neighbour -sinc
+	REFERENCE=${MBMBASE}_resampled_atlas/resampled_atlas.mnc
+	[ -f "$REFERENCE" ] || { echo "ERROR: could not find reference: $REFERENCE"; exit 1; }
+
+
+	for f in $FILES; do
+		h=${f%.mnc}
+		g=`basename ${h}_b0`
+		XFM=${MBMBASE}_processed/${g}.november_2007_distortion_corrected/transforms/${g}.november_2007_distortion_corrected-from-native.xfm
+		XFMOUT=${XFM%.xfm}+discorr.xfm
+		[ -f "$XFM" ]       || { echo "ERROR: could not find transformation: $XFM"; exit 1; }
+
+		OUT=`basename ${h}.nii.gz`
+		[ -f "$OUT" ] && echo "Warning: file $OUT already exists, will get overwritten." > /dev/stderr
+
+		A="[ -f \"$XFMOUT\" ] || xfmconcat -clobber -verbose $COILCORRDIR/coil`micecoil $f | awk '{print $2}'`.xfm $XFM ${XFM%.xfm}+discorr.xfm"
+		B="miceconvert $h/nii/dti_${APPLY2MOD}.nii.gz $h/dti_${APPLY2MOD}.mnc"
+		C="mincresample -2 -quiet -clobber $INTERPOLATION -like $REFERENCE -transformation $XFMOUT $h/dti_${APPLY2MOD}.mnc $h/dti_${APPLY2MOD}_std.mnc"
+		D="miceconvert $h/dti_${APPLY2MOD}_std.mnc $OUT"
+		E="rm -fv $h/dti_${APPLY2MOD}.mnc $h/dti_${APPLY2MOD}_std.mnc"
+
+		echo "$A;$B && $C && $D && $E"
+
+	done
+
+fi
+
+
+
+exit 0
+
+
