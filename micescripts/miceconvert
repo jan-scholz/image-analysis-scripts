@@ -1,0 +1,79 @@
+#! /bin/bash
+# converts minc to nifti
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+
+for f in fslchfiletype remove_ext imcp nii2mnc mincresample; do
+	which $f > /dev/null || { echo "ERROR: failed to find dependency: $f"; exit 1; }
+done
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) INPUT OUTPUT"
+	echo "  Converts between MINC and NIFTI format"
+	echo "  INPUT and OUTPUT are .mnc and .nii.gz files"
+	echo
+}
+
+
+###############################################################################
+# MAIN                                                                        #
+###############################################################################
+while getopts v opt
+do
+    case "$opt" in
+      v) VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+
+FILETYPE=`micetest $1`
+[ $? -ne 0 ] && exit 1
+[ -z "$VERBOSE" ] || echo FILETYPE $FILETYPE
+
+
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
+
+
+if [ NIFTI = "${FILETYPE:0:5}" ]; then
+
+	echo nifti-minc
+
+	INPUT=`remove_ext $1`
+	OUTPUT=${2%.mnc}.mnc
+
+	fslchfiletype NIFTI $INPUT $TDIR/nii
+	nii2mnc $TDIR/nii.nii $TDIR/minc.mnc 2> /dev/null
+
+	[ -f $TDIR/minc.mnc ] || { echo "ERROR: conversion did not work" >/dev/stderr; exit 1; }
+	mkdir -p `dirname $OUTPUT`
+	cp $TDIR/minc.mnc $OUTPUT
+
+elif [ MINC = "${FILETYPE:0:4}" ]; then
+
+	echo minc-nifti
+
+	INPUT=$1
+	OUTPUT=`remove_ext $2`
+
+	mincresample -2 -quiet -clobber  -keep_real_range -float $INPUT $TDIR/FLOAT.mnc
+	mnc2nii $TDIR/FLOAT.mnc $TDIR/nii.nii 2> /dev/null
+	fslchfiletype NIFTI_GZ $TDIR/nii.nii || rm $TDIR/nii.nii
+	rm -f $TDIR/FLOAT.mnc
+
+	[ -f $TDIR/nii.nii.gz ] || { echo "ERROR: conversion did not work" >/dev/stderr; exit 1; }
+	mkdir -p `dirname $OUTPUT`
+	imcp $TDIR/nii.nii.gz $OUTPUT
+
+fi
+
+rm -rf $TDIR
+exit 0
+
