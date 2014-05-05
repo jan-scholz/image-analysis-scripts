@@ -1,0 +1,103 @@
+#! /bin/bash
+# create webpage overview of input files
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+#
+# version Wed Jun 29
+
+
+usage ()
+{
+	echo "Usage: `basename $0` [MINCPIKOPTIONS..] IMAGES.. [SLICEOPTIONS..]"
+	echo "  SLICEOPTIONS      more than one option and more than one slice number can be specified"
+	echo "                    if not specified 3 slices for each orientation will be created"
+	echo "     -axial    N.."
+	echo "     -coronal  N.."
+	echo "     -sagittal N.."
+	echo
+	echo "  MINCPIKOPTIONS    adjust intensity ranges, e.g. -image_range MIN MAX"
+	echo
+	echo "  EXAMPLE"
+	echo "     `basename $0` MINCFILE.. "
+	echo "     `basename $0` MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
+	echo "     `basename $0` -image_range 0 1 MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
+}
+
+
+[ "$#" -lt 1 ] && { usage; exit 1; }
+
+SCALE=10
+OUTDIR=slicesdir
+
+[ "$*" = "" ]    && { echo "ERROR: slice options not specified";       exit 1; }
+
+
+mkdir -p $OUTDIR
+REPORT=$OUTDIR/index.html;
+
+echo "<html><body>" > $REPORT
+
+PIKOPTS=
+while [ ! "$1" = "${1%.mnc}.mnc" ]; do
+	PIKOPTS="$PIKOPTS $1"; shift;
+done
+
+IMAGES=
+while [ "$1" = "${1%.mnc}.mnc" ]; do
+	IMAGES="$IMAGES $1"; shift;
+done
+
+[ -z "$IMAGES" ] && { echo "ERROR: found no images"; exit 1; }
+
+[ "$#" -lt 1 ] && { eval "$0 $PIKOPTS $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
+#[ "${!#}" = "-default" ] && { eval "$0 $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
+
+
+i=0
+for ARG in $@; do
+	if [ "$1" = "-axial" -o "$1" = "-coronal" -o "$1" = "-sagittal" ]; then
+		SLICE=$1; shift
+		while [ "$1" -le 100 -a "$1" -ge 0 ] 2> /dev/null; do
+			j=0
+			for g in $IMAGES; do
+				TMP=`basename ${g%.mnc}``printf "%04i" $j``printf "%04i.png" $i`
+
+				XLEN=`mincinfo -dimlength xspace $g`
+				YLEN=`mincinfo -dimlength yspace $g`
+				ZLEN=`mincinfo -dimlength zspace $g`
+
+				case $SLICE in
+					"-axial")    N=$(($ZLEN * $1 / 100)) ;;
+					"-coronal")  N=$(($YLEN * $1 / 100)) ;;
+					"-sagittal") N=$(($XLEN * $1 / 100)) ;;
+				esac
+
+				mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
+				let j++
+			done
+			shift
+			let i++
+		done
+	fi
+done
+
+
+i=0
+for g in $IMAGES; do
+	TILES=`ls $OUTDIR/$(basename ${g%.mnc})$(printf "%04i" $i)*.png`
+	if [ ! -z "$TILES" ]; then
+		OUTIM=`printf "image%04i" $i`.png 
+		montage -border 0 -background black -tile `echo $TILES | wc -w`x1 $TILES $OUTDIR/$OUTIM
+		echo "<img src=\"$OUTIM\" title="$g" >`basename $g`<br>" >> $REPORT
+		rm $TILES
+		let i++
+	fi
+done
+
+
+echo "</body></html>" >> $REPORT
+
+echo now open $REPORT
+
+
+#-font Courier -pointsize 12 -draw "text 25,60 'Magick'"  -fill darkred -stroke magenta
