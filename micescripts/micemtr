@@ -2,6 +2,8 @@
 # create MTR images from scanner output
 #
 # Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+#
+# use mincinfo and minc_modify_header to copy header, i.e. vnmr:coil
 
 
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set, run: export TMPDIR=/tmp"; exit 1; }
