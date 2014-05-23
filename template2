@@ -179,16 +179,16 @@ ALL="$ALL"
 OUTDIR=$OUTDIR
 fslmerge -t \$OUTDIR/all \$ALL
 fslmaths \$OUTDIR/all -Tmean \$OUTDIR/template_init
-flirt -in \$OUTDIR/template_init -ref $REF ${REFMASK/--refmask=/-refweight } -omat ${TARGETTRANS}.mat -nosearch -dof 12
+flirt -in \$OUTDIR/template_init -ref $REF ${REFMASK/--refmask=/-refweight } -omat ${TARGETTRANS}.mat -nosearch -dof 12 -cost mutualinfo
 fnirt --in=\$OUTDIR/template_init --ref=$REF ${REFMASK} --aff=${TARGETTRANS}.mat --cout=${TARGETTRANS}_warp --config=$NUDGEFILE --logout=/dev/null -v > ${TARGETTRANS}.log
 TRANS2="--postmat=${TARGETTRANS}.mat"
 [ \`imtest ${TARGETTRANS}_warp\` = 1 ] && TRANS2="--warp2=${TARGETTRANS}_warp"
 for g in \$ALL; do
 	INVWARPREF=\`imglob \$(basename \${g%_to_target_init}_mask)\`;
-	INVWARPREF=\${INVWARPREF:-\${g%_to_target_init}};
+	INVWARPREF=\\\${INVWARPREF:-\${g%_to_target_init}};
 	convertwarp --ref=${REF} --warp1=\${g}_warp \$TRANS2 --out=\${g%_init}_warp;
-	${BACKPROJ}invwarp -w \${g%_init}_warp -o \${g%_init}_inv_warp -r \`basename \${INVWARPREF}\` --force
-	${BACKPROJ}applywarp -i ${REF}_mask -r \`basename \${INVWARPREF}\` -w \${g%_init}_inv_warp -o \${g%_to_target_init}_mask --interp=nn
+	${BACKPROJ}invwarp -w \${g%_init}_warp -o \${g%_init}_inv_warp -r \\\`basename \\\${INVWARPREF}\\\` --force --noconstraint;
+	${BACKPROJ}applywarp -i ${REF}_mask -r \\\`basename \\\${INVWARPREF}\\\` -w \${g%_init}_inv_warp -o \${g%_to_target_init}_mask --interp=nn;
 done
 # final template
 for g in \$ALL; do applywarp -i \`basename \${g%_to_target_init}\` -r $REF -w \${g%_init}_warp -o \${g%_init} --interp=sinc; done
