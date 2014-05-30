@@ -4,26 +4,37 @@
 # Copyright 2012, jan.scholz@phenogenomics.ca at MICe
 
 
-TABLE=/projects/mice/jlerch/cortex-label/c57_brain_atlas_labels.csv
+DEFS=/projects/mice/jlerch/cortex-label/c57_brain_atlas_labels.csv
 
 usage ()
 {
-	echo "Usage: $(basename $0) LABEL.."
+	echo "Usage: $(basename $0) [-d DEFS] LABEL.."
+	echo "  -d DEFS     definitions CSV file"
 	echo "  LABEL    one or several numbers or strings refering to label numbers or names"
-	echo "           (default: $TABLE)"
+	echo "           (default: $DEFS)"
 }
+
+while getopts d:v opt
+do
+	case "$opt" in
+		d)  DEFS="$OPTARG";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
 
 
 [ $# -lt 1 ] && { usage; exit 1; }
 
 
-[ -f "$TABLE" ] || { echo "ERROR: Could not find table: $TABLE"; exit 1; }
+[ -f "$DEFS" ] || { echo "ERROR: Could not find DEFS: $DEFS"; exit 1; }
 
 
 
-COLNAMES=`head -n1 $TABLE`
+COLNAMES=`head -n1 $DEFS`
 
-cat $TABLE | while read LINE; do
+cat $DEFS | while read LINE; do
 	STRUCTURE=`echo $LINE | awk -F, '{print $2}'`
 	for i in $@; do
 		[ "`echo $LINE | awk -F, '{print $3}'`" == "$i" ] && printf "found \"%g\" in \"%s\" of \"%s\"\n" $i "`echo $COLNAMES | awk -F, '{print $2}'`" "$STRUCTURE"
@@ -53,7 +64,7 @@ exit 0
 #
 #checkLabelNr=input.isdigit()
 #
-#f = open(\"$TABLE\", 'rt')
+#f = open(\"$DEFS\", 'rt')
 #try:
 #    reader = csv.DictReader(f)
 #    colnames = reader.fieldnames
