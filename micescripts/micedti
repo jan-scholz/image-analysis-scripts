@@ -144,7 +144,9 @@ if [ ! -z "$DTIMASK" ]; then
 	COILCORRDIR=/home/jscholz/resources/registration/coilcorr/2007
 
 	for f in $FILES; do
-		XFM="${MBMBASE}_processed/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected/transforms/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected-from-native.xfm"	  
+		#XFM="${MBMBASE}_processed/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected/transforms/`basename ${f%.mnc}`_b0.november_2007_distortion_corrected-from-native.xfm"	  
+		namebase=`basename $(ls -d ${MBMBASE}_processed/$(basename ${f%.mnc})*)`
+		XFM="${MBMBASE}_processed/${namebase}/transforms/${namebase}-from-native.xfm"	  
 
 		# A) concatenate distortion correction and template registration
 		# B) apply transformation 
@@ -153,7 +155,7 @@ if [ ! -z "$DTIMASK" ]; then
 		A="xfmconcat -clobber -verbose $COILCORRDIR/coil`micecoil $f | awk '{print $2}'`.xfm $XFM ${XFM%.xfm}+discorr.xfm"
 		B="mincresample -2 -quiet -clobber -nearest_neighbour -like `basename $f .mnc`_corr.mnc -invert_transformation -transformation ${XFM%.xfm}+discorr.xfm atlas/dtimask.mnc `basename ${f%.mnc}`/nodif_brain_mask.mnc"
 		C="miceconvert `basename ${f%.mnc}`/nodif_brain_mask.mnc `basename ${f%.mnc}`/nii/nodif_brain_mask"
-		D="fslmaths `basename ${f%.mnc}`/nii/nodif_brain_mask -thr 10e-8 `basename ${f%.mnc}`/nii/nodif_brain_mask"
+		D="fslmaths `basename ${f%.mnc}`/nii/nodif_brain_mask -thr 10e-8 -bin `basename ${f%.mnc}`/nii/nodif_brain_mask"
 
 		echo "$A;$B;$C;$D"
 	done
@@ -232,7 +234,8 @@ if [ ! -z "$APPLY2MOD" ]; then
 	for f in $FILES; do
 		h=${f%.mnc}
 		g=`basename ${h}_b0`
-		XFM=${MBMBASE}_processed/${g}.november_2007_distortion_corrected/transforms/${g}.november_2007_distortion_corrected-from-native.xfm
+		#XFM=${MBMBASE}_processed/${g}.november_2007_distortion_corrected/transforms/${g}.november_2007_distortion_corrected-from-native.xfm
+		XFM=${MBMBASE}_processed/${g}*/transforms/${g}*-from-native.xfm
 		XFMOUT=${XFM%.xfm}+discorr.xfm
 		[ -f "$XFM" ]       || { echo "ERROR: could not find transformation: $XFM"; exit 1; }
 
