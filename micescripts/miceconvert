@@ -63,7 +63,20 @@ elif [ MINC = "${FILETYPE:0:4}" ]; then
 	INPUT=$1
 	OUTPUT=`remove_ext $2`
 
+# these should be INTEGER not FLOATS!!!!
+#	TOTALSUM=`printf "%.0f" $(mincstats -sum $INPUT | awk '{print $2}')`
+#	  BINSUM=`printf "%.0f" $(mincstats -range 1,1 -count $INPUT | awk '{print $3}')`
+#
+#	if [ "$TOTALSUM" -eq "$BINSUM" ]; then
+#		#[ -z "$VERBOSE" ] || echo "using mask clutch"
+#		echo "Warning: using mask clutch"
+#		cp $INPUT $TDIR/FLOAT.mnc
+#	else
+#		mincresample -2 -quiet -clobber  -keep_real_range -float $INPUT $TDIR/FLOAT.mnc
+#	fi
+
 	mincresample -2 -quiet -clobber  -keep_real_range -float $INPUT $TDIR/FLOAT.mnc
+
 	mnc2nii $TDIR/FLOAT.mnc $TDIR/nii.nii 2> /dev/null
 	fslchfiletype NIFTI_GZ $TDIR/nii.nii || rm $TDIR/nii.nii
 	rm -f $TDIR/FLOAT.mnc
