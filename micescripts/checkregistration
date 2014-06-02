@@ -1,0 +1,25 @@
+#! /bin/bash
+#
+# create an animated GIF to check the registration accuracy
+
+usage ()
+{
+	echo "checkregistration OUTPUT MINCFILE [MINCFILE..]"
+}
+
+[ $# -lt 2 ] && { usage; exit 1; }
+
+OUT=$1
+shift
+
+for f in $@; do
+	mincpik -clobber -scale 20 $f -slice 50 /tmp/`basename $f .mnc`.png
+	convert /tmp/`basename $f .mnc`.png -rotate 180           /tmp/`basename $f .mnc`.png
+	convert /tmp/`basename $f .mnc`.png -modulate 200,100,100 /tmp/`basename $f .mnc`.png
+	PNGS="$PNGS /tmp/`basename $f .mnc`.png"
+done
+
+convert -delay 1 -loop 0 $PNGS $OUT
+
+rm $PNGS
+
