@@ -1,0 +1,17 @@
+#! /bin/bash
+
+
+echo '
+
+#  use spellcheck in gvim
+set spelllang=de
+set spell
+
+set moudemodel=popup
+
+
+'
+
+
+
+
