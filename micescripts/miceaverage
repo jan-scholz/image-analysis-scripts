@@ -44,10 +44,10 @@ trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SI
 
 for f in $FILES; do
 	[ `echo "$(mincinfo -attvalue time:length ${f}) <= $END" | bc -l` -ne 0 ] && { echo "ERROR: not enough volumes in file: $f"; exit 1; } 
-	OUT=${f%.mnc}${SUFFIX}.mnc
+	OUT=`basename ${f%.mnc}`${SUFFIX}.mnc
 	[ -z "$VERBOSE" ] || printf "averaging volumes %g to %g of file %s\n" $START $END $f
-	mincreshape -2 -quiet -clobber -dimrange time=${START},${N} ${f} $TDIR/${f}
-	mincaverage -2 -quiet -clobber -avgdim time $TDIR/${f} $OUT
+	mincreshape -2 -quiet -clobber -dimrange time=${START},${N} ${f} $TDIR/`basename ${f}`
+	mincaverage -2 -quiet -clobber -avgdim time $TDIR/`basename ${f}` $OUT
 	[ -z "$VERBOSE" ] || echo "saving as: $OUT"
 done
 
