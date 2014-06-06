@@ -66,10 +66,17 @@ if ( is.null(opts$table) | is.null(opts$mask) | is.null(opts$outvol) ) {
 # MAIN
 ###############################################################################
 
-sink('/dev/null')
+#sink('/dev/null')
 
 library(RMINC)
-gf1 <- read.table(opts$table, header=T)
+
+if (as.numeric(regexpr('csv$',opts$table))>0) {
+	cat('csv','\n')
+	gf1 <- read.csv(opts$table, header=T)
+} else {
+	cat('txt','\n')
+	gf1 <- read.table(opts$table, header=T)
+}
 
 
 # default formula: filename ~ ev, otherwise set to FOMRULA
@@ -84,7 +91,7 @@ if ( is.null(opts$form) ) {
 	formula <- as.formula(opts$form)
 }
 
-sink()
+#sink()
 cat("set formula: ")
 formula
 cat("\n")
@@ -98,6 +105,7 @@ sink('/dev/null')
 vs1 <- mincLm(formula, gf1)
 qvals1 <- mincFDR(vs1,mask=opts$mask,method="FDR")
 
+write.table(gf1,paste(opts$outvol,"_table.txt",sep=""))
 
 ntests <- ncol(vs1) - 2
 testnames <- attr(vs1,"dimnames")[[2]]
