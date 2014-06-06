@@ -201,7 +201,7 @@ correct ()
 	BMAPDIR=${BMAP%.mnc}
 	check_n_split $BMAP
 
-	mkdir -p $TDIR/{bres,corr/nifti}
+	mkdir -p $TDIR/{bres,corr}
 
 	MASK=${DATA%.mnc}_mask.mnc
 	if [ -f ${MASK} ]; then
@@ -251,6 +251,7 @@ correct ()
 	mincconcat -2 -quiet -clobber -concat_dimension time $TDIR/corr/vol* $TDIR/corr/data.mnc
 
 	if [ ! -z "$DEBUGDIR" ]; then
+		mkdir -p $TDIR/corr/nifti
 		nifti $TDIR/corr/data.mnc $TDIR/corr/nifti/data
 		nifti $MASK $TDIR/corr/nifti/`basename ${MASK%.mnc}`
 		fslmaths $TDIR/corr/nifti/`basename ${MASK%.mnc}` -bin $TDIR/corr/nifti/`basename ${MASK%.mnc}`
@@ -305,10 +306,8 @@ shift `expr $OPTIND - 1`
 
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 TDIR=$TMPDIR/$USER/$$
-#TDIR=$TMPDIR/$USER/test
 mkdir -p $TDIR || { echo "ERROR: Could not create temp. dir. \$TDIR" > /dev/stderr; exit 1; }
 trap "{ rm -fr $TDIR; exit 0; }" SIGINT SIGTERM
-#trap "{ echo 'cleaned up temp. directory'; exit 255; }" EXIT
 
 [ -z "$S0DIST" ] && S0DIST=5.5
 [ -z "$DIST" ]   &&   DIST=5.5
