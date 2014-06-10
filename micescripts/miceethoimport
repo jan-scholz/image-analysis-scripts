@@ -1,0 +1,174 @@
+#!/usr/bin/env Rscript
+# import one or more files from ethovision
+
+
+usage <- function () {
+	cat("Usage: miceethoimport -o OUTPUT FILE..\n")
+	cat("  -o OUTPUT       output name\n")
+	cat("\n")
+	cat("Example:\n")
+	cat("miceethoimport -o table.csv 1.txt 2.txt\n")
+}
+
+
+rename_cols <- function(dataframe,name) {
+	# combine first 4 rows for column names
+	i <- 1
+	for ( c in colnames(dataframe) ) {
+		colname <-  paste(dataframe[1:4,c],collapse=" ")
+		colname <-  gsub('^  *','',colname)
+		colname <-  gsub('  *$','',colname)
+		colnames(dataframe)[colnames(dataframe)==c] <- colname
+#cat('adjusting ',c,'to: ',colnames(dataframe)[i],'\n')
+	i <- i + 1
+	}
+
+	# shorten column names
+	colnamedict <- matrix(c(
+	"","cont_trialnr",
+	"Mouse ID","id",
+	"Group","group",
+	"Day","day",
+	"Trial","trial",
+	"Training Gp","training_group",
+	"Distance moved Center-point Number of samples","distance_moved_samples",
+	"Distance moved Center-point Total cm","distance_moved_total",
+	"Distance to zone hole 10, Center-point Mean cm","target_distance_mean",
+	"Distance to zone hole 10, Center-point Total cm","target_distance_total",
+	"In zone Quadrant 1, Center-point Duration s","quadrant1",
+	"In zone 2 Quadrant 2, Center-point Duration s","quadrant2",
+	"In zone 3 Quadrant 3, Center-point Duration s","quadrant3",
+	"In zone 4 Quadrant 4, Center-point Duration s","quadrant4",
+	"Velocity Center-point Mean cm/s","velocity",
+	"dur/freq in non target hole1, Nose-point Frequency"  ,"hole 1",
+	"dur/freq in non target hole 2, Nose-point Frequency" ,"hole 2",
+	"dur/freq in non target hole 3, Nose-point Frequency" ,"hole 3",
+	"dur/freq in non target hole 4, Nose-point Frequency" ,"hole 4",
+	"dur/freq in non target hole 5, Nose-point Frequency" ,"hole 5",
+	"dur/freq in non target hole 6, Nose-point Frequency" ,"hole 6",
+	"dur/freq in non target hole 7, Nose-point Frequency" ,"hole 7",
+	"dur/freq in non target hole 8, Nose-point Frequency" ,"hole 8",
+	"dur/freq in non target hole 9, Nose-point Frequency" ,"hole 9",
+	"dur/freq in non target hole 10, Nose-point Frequency","hole 10",
+	"dur/freq in non target hole 11, Nose-point Frequency","hole 11",
+	"dur/freq in non target hole 12, Nose-point Frequency","hole 12",
+	"dur/freq in non target hole 13, Nose-point Frequency","hole 13",
+	"dur/freq in non target hole 14, Nose-point Frequency","hole 14",
+	"dur/freq in non target hole 15, Nose-point Frequency","hole 15",
+	"dur/freq in non target hole 16, Nose-point Frequency","hole 16",
+	"dur/freq in non target hole 17, Nose-point Frequency","hole 17",
+	"dur/freq in non target hole 18, Nose-point Frequency","hole 18",
+	"dur/freq in non target hole 19, Nose-point Frequency","hole 19",
+	"dur/freq in non target hole 20, Nose-point Frequency","hole 20",
+	"dur/freq in non target hole 21, Nose-point Frequency","hole 21",
+	"dur/freq in non target hole 22, Nose-point Frequency","hole 22",
+	"dur/freq in non target hole 23, Nose-point Frequency","hole 23",
+	"dur/freq in non target hole 24, Nose-point Frequency","hole 24",
+	"dur/freq in non target hole 25, Nose-point Frequency","hole 25",
+	"dur/freq in non target hole 26, Nose-point Frequency","hole 26",
+	"dur/freq in non target hole 27, Nose-point Frequency","hole 27",
+	"dur/freq in non target hole 28, Nose-point Frequency","hole 28",
+	"dur/freq in non target hole 29, Nose-point Frequency","hole 29",
+	"dur/freq in non target hole 30, Nose-point Frequency","hole 30",
+	"dur/freq in non target hole 32, Nose-point Frequency","hole 32",
+	"dur/freq in non target hole 33, Nose-point Frequency","hole 33",
+	"dur/freq in non target hole 34, Nose-point Frequency","hole 34",
+	"dur/freq in non target hole 35, Nose-point Frequency","hole 35",
+	"dur/freq in non target hole 36, Nose-point Frequency","hole 36",
+	"dur/freq in non target hole 37, Nose-point Frequency","hole 37",
+	"dur/freq in non target hole 38, Nose-point Frequency","hole 38",
+	"dur/freq in non target hole 40, Nose-point Frequency","hole 40",
+	"dur/freq in non target hole 39, Nose-point Frequency","hole 39",
+	"dur/freq in non target hole 31, Nose-point Frequency","hole 31",
+	"latency to target In zone hole 10, Center-point Latency to first s","latency",
+	"trial duration  Duration s","duration",
+	"trial duration  Frequency","duration_freq",
+	"NA NA NA NA","empty"
+	),2,59)
+
+	for (i in seq(ncol(colnamedict))) {
+		if (colnames(dataframe)[i] == colnamedict[1,i]) {
+			if (colnamedict[2,i] %in% colnames(dataframe)) {
+				warning('Replacement column name "',colnamedict[2,i],'" already present\n')
+			}
+			colnames(dataframe)[i] <- colnamedict[2,i]
+#cat(i,'adjusting ',colnamedict[1,i],' to ',colnamedict[2,i],'\n')
+		} else {
+			warning('error at column ',i,', column name "',colnames(dataframe)[i],'" not found in replacement dictionary.\n')
+		}
+	}
+
+	# add filename column
+	dataframe$name <- name
+
+	return(dataframe[5:nrow(dataframe),])
+}
+
+
+
+
+### COMMAND LINE ARGUMENTS ####################################################
+args <- commandArgs(TRUE)
+opts <- NULL
+files <- ''
+ifile <- 0
+
+if (length(args)==0) {
+    usage()
+	quit(status=1)
+} else {
+	i <- 1
+    while ( i <= length(args) ) {
+		if        (args[i] == "-o") { 
+			opts$output   <- args[i+1] 
+			i <- i+1;
+		} else if ( file.exists(args[i]) ) {
+			ifile = ifile + 1
+			files[ifile] <- args[i]
+		} else if ( substr(args[i],1,1) == '-' ) { 
+			cat("ERROR: option ",args[i]," does not exist\n")
+			q(status=1)
+		}
+		i <- i+1;
+    }
+}
+
+#if ( is.null(opts$table) | is.null(opts$mask) | is.null(opts$outvol) ) {
+#    usage()
+#	q(status=1)
+#}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+#sink('/dev/null')
+
+
+combinedTable <- data.frame()
+
+
+for ( f in files ) {
+
+	# read in tables
+	tmp <- read.csv(f,header=F)
+	cat('reading in ',f,'\n')
+
+	combinedTable <- rbind(combinedTable,rename_cols(tmp,f))
+}
+
+# convert string "Trial N" to numeric N
+combinedTable$cont_trialnr <- as.numeric(sapply(combinedTable$cont_trialnr,gsub,pattern='^Trial  *',replacement=''))
+
+
+cat('writing output to:',opts$output,'\n')
+write.csv(combinedTable,file=opts$output,row.names=F)
+
+
+#sink()
+
+q(status=0)
+
+
+
