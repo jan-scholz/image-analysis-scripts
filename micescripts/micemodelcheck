@@ -1,0 +1,102 @@
+#! /bin/bash
+# converts minc to nifti
+#
+# Copyright 2012, jan.scholz@phenogenomics.ca at MICe
+
+DEFAULTSUFFIX="-resampled-final-nlin"
+
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
+for f in miceconvert fslview; do
+	which $f > /dev/null || { echo "ERROR: failed to find dependency: $f"; exit 1; }
+done
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-n] MBMBASE"
+	echo "  -n          normalize (based on central 3rd)"
+	echo "  -s          suffix (default: $DEFAULTSUFFIX)"
+	echo "  MBMBASE     MiceBuildModel base (requires MBMBASE_processed)"
+	echo
+}
+
+
+###############################################################################
+# MAIN                                                                        #
+###############################################################################
+while getopts ns:v opt
+do
+    case "$opt" in
+      n) NORM=1;;
+      s) SUFFIX=${OPTARG};;
+      v) VERBOSE=1;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -ne 1 ] && { usage; exit 1; }
+
+
+SUFFIX=${SUFFIX:-$DEFAULTSUFFIX}
+
+MBMBASE=${1}_processed
+if [ ! -d "$MBMBASE" ]; then
+	MBMBASE=${1}
+	[ -d "$MBMBASE" ] || { echo "ERROR: could not find ${MBMBASE} nor ${MBMBASE}_processed"; exit 1; }
+fi
+
+
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+
+for f in $MBMBASE/*/resampled/*${SUFFIX}.mnc; do
+	[ -f "$f" ] || { echo "ERROR: could not find file $f"; exit 1; }
+	miceconvert $f $TDIR/tmp
+	X=$((`fslval $TDIR/tmp dim1` / 3))
+	Y=$((`fslval $TDIR/tmp dim2` / 3))
+	Z=$((`fslval $TDIR/tmp dim3` / 3))
+	fslmaths $TDIR/tmp -roi $X $X $Y $Y $Z $Z 0 1 -bin $TDIR/mask
+	break
+done
+
+ALL=; MEAN=0; SD=1;
+for f in $MBMBASE/*/resampled/*${SUFFIX}.mnc; do
+	OUT=$TDIR/`basename $f .mnc`
+	miceconvert $f $OUT
+	ALL="$ALL $OUT"
+	if [ ! -z "$NORM" ]; then
+		MEAN=`echo $MEAN + $(fslstats $OUT -k $TDIR/mask -m) | bc`
+		SD=`echo $SD + $(fslstats $OUT -k $TDIR/mask -s) | bc`
+	fi
+done
+
+N=`echo $ALL | wc -w`
+MEAN=`echo "$MEAN / $N" | bc`
+SD=`echo "$SD / $N" | bc`
+
+[ -z "$VERBOSE" ] || printf "\nnormalizing"
+if [ ! -z "$NORM" ]; then
+	for f in $ALL; do
+		#echo "fslmaths $f -sub `fslstats $f -k $TDIR/mask -m` -div `fslstats $f -k $TDIR/mask -s` -mul $SD -add $MEAN $f"
+		fslmaths $f -sub `fslstats $f -k $TDIR/mask -m` -div `fslstats $f -k $TDIR/mask -s` -mul $SD -add $MEAN $f
+		[ -z "$VERBOSE" ] || echo -n "."
+	done
+fi
+[ -z "$VERBOSE" ] || echo
+
+
+[ -z "$ALL" ] && { echo "ERROR: failed to find and convert images"; exit 1; }
+[ -z "$VERBOSE" ] || printf "\nmerging results\n"
+fslmerge -t $TDIR/all $ALL
+
+echo $TDIR
+echo "hit any key to continue and view the results"
+read
+fslview  $TDIR/all
+
+rm -rf $TDIR
+exit 0
+
+
