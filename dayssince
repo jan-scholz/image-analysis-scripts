@@ -4,7 +4,7 @@ usage ()
 {
 	echo "Usage: $(basename $0) [-v] < FILE"
 	echo "       cat FILE | $(basename $0)"
-	echo "  -v   display dates"
+	echo "  -v   display recognized dates, stop if not a date"
 	echo
 	echo "supply a list of parsable dates, two dates per row, no white space within dates"
 	echo "E.g. Oct-25-2010 Jan-28-2011"
@@ -13,15 +13,26 @@ usage ()
 
 [ "$1" == "-v" ] && VERBOSE="-v"
 
+
+
+LNR=1
 if [ -t 0 ]; then
     usage; exit 1
 else
 	while read LINE; do
 		l=($LINE)
-		DATE0=$(date +%s -d "${l[0]}") || exit 1
-		DATE1=$(date +%s -d "${l[1]}") || exit 1
-		[ -z "$VERBOSE" ] || echo -n "`date +"%d-%b-%Y" -d "@$DATE0"` `date +"%d-%b-%Y" -d "@$DATE1"` "
-		echo $(( (${DATE1}-${DATE0})/86400 ))
+		DATE0=$(date +%s -d "${l[0]}" 2> /dev/null)
+		DATE1=$(date +%s -d "${l[1]}" 2> /dev/null)
+
+		if [ -z "$DATE0" -o -z "$DATE0" -o -z "${l[0]}" -o -z "${l[1]}" ]; then
+			[ -z "$VERBOSE" ] || { echo "ERROR: invalid dates \"${l[0]}\", \"${l[1]}\" on line $LNR"; exit 1; }
+			echo
+		else
+			[ -z "$VERBOSE" ] || echo -n "`date +"%d-%b-%Y" -d "@$DATE0"` `date +"%d-%b-%Y" -d "@$DATE1"` "
+			echo $(( (${DATE1}-${DATE0})/86400 ))
+		fi
+
+	let LNR++
 	done
 fi
 
