@@ -1,0 +1,107 @@
+#!/usr/bin/env Rscript
+# import one or more files from ethovision
+#
+
+usage <- function () {
+	cat("Usage: miceethoimport -o OUTPUT FILE..\n")
+	cat("  -o OUTPUT       output name\n")
+	cat("\n")
+	cat("Example:\n")
+	cat("miceethoimportraw -o table.csv 1.txt 2.txt\n")
+}
+
+
+readfile <- function (filename) {
+
+	# read header of raw file (has different number of columns than the rest!
+	headerlines <- read.csv(filename,header=F,nrows=1,as.is=T)[[2]]
+	header <- read.csv(filename,header=F,nrows=headerlines-2,as.is=T)[,1:2]
+	header <- subset(header,V1!='Video file')
+
+	# read in data portion
+	tmp <- read.csv(filename,header=T,skip=headerlines-1);
+
+	# correct class of these columns to numeric
+	for (c in c('X.center','Y.center','X.nose','Y.nose','X.tail','Y.tail','Area','Areachange','Elongation','Direction','Distance.moved','Velocity','Distance.to.zone')) {
+		tmp[,c] <- as.numeric(as.character((tmp[,c])))
+	}
+
+	# add header info to table
+	for (r in c("Mouse ID","Group","Day","Trial","Training Gp")) {
+		tmp[r] <- header[header$V1==r,2]
+	}
+
+	# add filename
+	#cat('adding',filename,'\n')
+	tmp$filename <- filename
+
+	return(tmp)
+}
+
+
+
+
+### COMMAND LINE ARGUMENTS ####################################################
+args <- commandArgs(TRUE)
+opts <- NULL
+files <- ''
+ifile <- 0
+
+if (length(args)==0) {
+    usage()
+	quit(status=1)
+} else {
+	i <- 1
+    while ( i <= length(args) ) {
+		if        (args[i] == "-o") { 
+			opts$output   <- args[i+1] 
+			i <- i+1;
+		} else if ( file.exists(args[i]) ) {
+			ifile = ifile + 1
+			files[ifile] <- args[i]
+		} else if ( substr(args[i],1,1) == '-' ) { 
+			cat("ERROR: option ",args[i]," does not exist\n")
+			q(status=1)
+		}
+		i <- i+1;
+    }
+}
+
+#if ( is.null(opts$table) | is.null(opts$mask) | is.null(opts$outvol) ) {
+#    usage()
+#	q(status=1)
+#}
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+
+combinedTable <- data.frame()
+
+
+for ( f in files ) {
+
+	# read in tables
+	tmp <- readfile(f)
+	cat('reading in ',f,'\n')
+
+	combinedTable <- rbind(combinedTable,tmp)
+	#cat('uni',unique(tmp$filename),'\n')
+}
+
+# convert string "Trial N" to numeric N
+#combinedTable$cont_trialnr <- as.numeric(sapply(combinedTable$cont_trialnr,gsub,pattern='^Trial  *',replacement=''))
+
+
+cat('writing output to:',opts$output,'\n')
+write.csv(combinedTable,file=opts$output,row.names=F)
+
+
+#sink()
+
+q(status=0)
+
+
+
