@@ -1,1 +1,72 @@
-fv /projects/mice/jscholz/rot/reg_hr/trash/hr_masks/nii/template `echo unscaled-fwhm0-5/design_behav_*_tfce_corrp_tstat1.nii.gz | sed 's/\([^ ][^ ]*\)/\1 -b 0.95,1/g'`
+#! /bin/bash
+#
+# should one day become a hub for help on micescripts
+
+
+# threshold all images before calling fslview
+#fv /projects/mice/jscholz/rot/reg_hr/trash/hr_masks/nii/template `echo unscaled-fwhm0-5/design_behav_*_tfce_corrp_tstat1.nii.gz | sed 's/\([^ ][^ ]*\)/\1 -b 0.95,1/g'`
+
+# backup to a backup folder included in this folder
+# tar --exclude=backup -czvf backup/1207_bin_backup.tar.gz .
+
+
+echo "NOT IMPLEMENTED YET"
+
+
+echo "###############################################################################"
+echo "# VRECON                                                                      #"
+echo "###############################################################################"
+echo
+echo "# PATH"
+echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin;'
+echo
+echo "# BASKET"
+echo "/projects/mice/jbishop/bin/vrecon -vmap fse_504_250_6_3 -shiftppe2 -croplpe -pmod fid vol"
+echo
+echo "# DTI"
+echo "adjust procpar"
+echo "/projects/mice/jbishop/bin/vrecon -vmap ../fse_168_160_6_1b -shiftppe2 -noclip fid DW_Recon"
+
+echo
+echo "###############################################################################"
+echo "# R                                                                           #"
+echo "###############################################################################"
+echo
+echo "# CLEAN WORKSPACE, CHANGE WIDTH"
+echo "rm(list=ls(all=TRUE))"
+echo "options(width=120)"
+echo
+echo "# READ IN DATA FRAME FROM R COMMAND LINE"
+cat << EOF
+data <- read.table(header=T, con <- textConnection('
+ subject sex condition before after change
+       1   F   placebo   10.1   6.9   -3.2
+ '))
+close(con)
+EOF
+
+echo
+echo "###############################################################################"
+echo "# SGE                                                                         #"
+echo "###############################################################################"
+echo
+echo "# CLEAN UP _PROCESSED DIRECTORIES"
+echo 'n=3; for d in `find . -maxdepth $n -type d -name \*_processed`; do echo $d; rm -v $d/*/tmp/*; done'
+
+echo
+echo "###############################################################################"
+echo "# BASKET REGISTRATION (16)                                                    #"
+echo "###############################################################################"
+echo
+echo "# DISTORTION CORRECTION"
+echo "for f in origs/*.mnc; do sge_batch -q diddl.q,all.q,bigmem.q /micehome/matthijs/32-bit/bin/distortion_correction_january_2011.pl -output-dir discorr/ \$f; done"
+echo
+echo "# REGISTRATION"
+echo ". /projects/mice/share/arch/linux64/quarantine_toothless/environment"
+echo
+echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base \$PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas discor/*.mnc"
+echo "# -lsq12-max-pairs 0"
+echo
+echo "find . -regex '.*\(run\|fail\|lock\).*'"
+echo
+
