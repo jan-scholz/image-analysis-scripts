@@ -1,0 +1,125 @@
+#!/bin/bash
+#
+# hierarchical registration of longitudinal data
+# jan.scholz@phenogenomics @ MICe, 2012-12-04
+#
+
+# flat registration
+# hierarchical registration on resampled/*-rigid.mnc
+# compare stats
+
+QUEUE="bigmem.q,all.q,diddl.q"
+
+# add these commands to the base model_command string
+HIERCMDS="-no-lsq6 -bootstrap-model ${ID[$i]}"
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) -o OUTBASE TABLE"
+	echo "  -o OUTBASE    basename of file containing MICe-build-model commands"
+	echo "  TABLE         association between file filename, id, and scan time"
+	echo "  "
+}
+
+
+
+model_command ()
+{
+	PIPEBASE=$1; shift
+	PIPENAME=$1; shift
+	ADD=$@
+
+	MBMCMD="MICe-build-model.pl -pipeline-base $PIPEBASE -pipeline-name $PIPENAME -sge -sge-queue $QUEUE -lsq6 -lsq12 -nlin-registration-method mincANTS -nlin-protocol /projects/souris/rylan/MEMRI/mincANTS_nlin_protocol_live.pl -nlin -nlin-stats -classified-atlas /projects/souris/rylan/MEMRI_Segmenting/LABELS/MEMRI_Atlas/Dec3_214pm.mnc -anatomical-atlas /projects/mice/share/mouse-brain-atlases/in-vivo-MEMRI/in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_average.mnc -resample-atlas"
+
+}
+
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+while getopts o:v opt
+do
+	case "$opt" in
+		o)  OUTBASE="$OPTARG";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
+
+
+TABLE=$1
+[ -f "$TABLE" ] || { echo "ERROR: could not find table"; exit 1; }
+
+
+# check that table contains necessary columns
+R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); if (!('id' %in% colnames(t) && 'filename' %in% colnames(t) && 'scan' %in% colnames(t))) quit(status=1)" || { echo "ERROR: TABLE does not contain all necessary columns"; exit 1; }
+FILES=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$filename),'\n');"))
+SCANS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$scan),'\n');"))
+IDS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$id),'\n');"))
+UNIQIDS=$(echo $IDS | tr ' ' '\n' | sort | uniq)
+
+
+#echo $FILES
+#echo $SCANS
+#echo $ID
+#echo $UNIQIDS
+
+
+###############################################################################
+# link files
+mkdir -p origs
+
+M=${#FILES[*]}
+for ((i=0;i<=$M;i++)); do
+	[ -f "${FILE[$i]}" ] || { echo "ERROR: could not find file: ${FILE[$i]}"; exit 1; }
+	ln -s $VERBOSE ${FILE[$i]} origs/${ID[$i]}_${SCAN[$i]}.mnc
+	ORIGS="$ORIGS  origs/${ID[$i]}_${SCAN[$i]}.mnc"
+done
+
+exit 1
+
+###############################################################################
+# flat registration
+FLATSCRIPT="${OUTBASE}_flat.sh"
+PBASE=$PWD/flat
+PNAME=all
+
+mkdir -p $PBASE
+echo `model_command $PBASE $PNAME` $ORIGS > $FLATSCRIPT
+
+
+###############################################################################
+# hierarchical registration
+HIERSCRIPT="${OUTBASE}_hier.sh"
+PBASE=$PWD/hier
+N=${#UNIQIDS[*]}
+
+mkdir -p $PBASE
+for ((i=0;i<=$N;i++)); do
+	echo `model_command $PBASE ${UNIQIDS[$i]} $HIERCMDS` > $TMPDIR/${UNIQIDS[$i]}.sh
+	TMP="$TMP $TMPDIR/${UNIQIDS[$i]}.sh"
+done
+
+
+M=${#FILES[*]}
+for ((i=0;i<=$M;i++)); do
+	echo  ${ORIGS[$i]} >> $TMPDIR/${UNIQIDS[$i]}.sh
+done
+
+
+cat $TMP > $HIERSCRIPT
+
+
+
+
+# full paths and boostrap and no-lsq6
+#MBMCMD="MICe-build-model.pl -pipeline-base /projects/mice/jscholz/enriched/Exp2/sst -pipeline-name grp1coil1 -sge -sge-queue bigmem.q,all.q,diddl.q -bootstrap-model /projects/mice/jscholz/enriched/Exp2/sst/grp1coil1_bootstrap -no-lsq6 -lsq12 -nlin-registration-method mincANTS -nlin-protocol /projects/souris/rylan/MEMRI/mincANTS_nlin_protocol_live.pl -nlin -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/in-vivo-MEMRI/in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_average.mnc -classified-atlas /projects/moush/vousdend/MEMRI/segmented_atlas/MEMRI_atlas_2012.mnc -resample-atlas"
+
