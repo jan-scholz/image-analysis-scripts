@@ -3,7 +3,8 @@
 
 FILES=`find . -maxdepth 1 -regex '.*\.[eo][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'`
 
-echo $FILES | column -t
+#echo $FILES | column -t
+echo $FILES | tr ' ' '\n' | column
 echo "found `echo $FILES | wc -w` files"
 echo "press any button to remove these files (ctrl-c to abort)"
 read
