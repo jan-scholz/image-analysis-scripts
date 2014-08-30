@@ -35,6 +35,10 @@ echo
 echo "# CLEAN WORKSPACE, CHANGE WIDTH"
 echo "rm(list=ls(all=TRUE))"
 echo "options(width=120)"
+echo "options(width=getOption('width'))"
+echo
+echo "# change / display current working directory"
+echo "getwd(); setwd()"
 echo
 echo "# READ IN DATA FRAME FROM R COMMAND LINE"
 cat << EOF
@@ -44,6 +48,9 @@ data <- read.table(header=T, con <- textConnection('
  '))
 close(con)
 EOF
+echo
+echo '#order sort'
+echo 'dd[with(dd, order(-z, b)), ]'
 
 echo
 echo "###############################################################################"
@@ -64,7 +71,7 @@ echo
 echo "# REGISTRATION"
 echo ". /projects/mice/share/arch/linux64/quarantine_toothless/environment"
 echo
-echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base \$PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas discor/*.mnc"
+echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base $PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy discorr/*.mnc"
 echo "# -lsq12-max-pairs 0"
 echo
 echo "find . -regex '.*\(run\|fail\|lock\).*'"
