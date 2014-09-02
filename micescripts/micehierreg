@@ -216,6 +216,8 @@ shift $(expr $OPTIND - 1)
 [ $# -lt 1 ] && { usage; exit 1; }
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 
+[ -z "$OUTBASE" ] && { echo "ERROR: OUTBASE not specified"; exit 1; }
+
 TABLE=$1
 [ -f "$TABLE" ] || { echo "ERROR: could not find table"; exit 1; }
 
