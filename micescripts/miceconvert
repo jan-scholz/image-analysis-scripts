@@ -24,7 +24,7 @@ usage ()
 while getopts v opt
 do
     case "$opt" in
-      v) VERBOSE=1;;
+      v) VERBOSE="-v";;
       \?)  usage; exit 1;;
     esac
 done
@@ -38,7 +38,7 @@ FILETYPE=`micetest $1`
 [ -z "$VERBOSE" ] || echo FILETYPE $FILETYPE
 
 
-TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+TDIR=$TMPDIR/$USER/$$; mkdir -p $VERBOSE $TDIR
 trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
 
 
