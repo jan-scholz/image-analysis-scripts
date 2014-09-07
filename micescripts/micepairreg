@@ -1,0 +1,256 @@
+#!/bin/bash
+#
+# pairwise registration
+# jan.scholz@phenogenomics @ MICe, 2013-03-06
+#
+
+QUEUE="bigmem.q,all.q,diddl.q"
+
+# bootstrap-downsample-factor circumvents bug that resamples jacobians to half the resolution
+ADDCMDS="-no-lsq6 -no-registration-accuracy -cleanup -bootstrap-downsample-factor 1"
+
+# default pipeline name (flat and root)
+DEFAULTPNAME=all
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-f|-p] -o OUTBASE FILES.."
+	echo "  -o OUTBASE    basename of file containing MICe-build-model commands"
+	echo "  FILES..       at least two input files, MINC"
+	echo "  "
+	echo "  -f            flat registration, all images to one template"
+	echo "  -p            pair-wise registration"
+	echo "  -x            resample jacobians to nlin, using xfm's from flat registration"
+	echo "  -X JAC        like '-x', but requires jacobian suffix, default for '-x' is \"-log-determinant-fwhm0.1.mnc\""
+	echo
+	echo "  -L            do not link, debug option, speeds up testing on slow file system"
+	echo
+	printf "run registration scripts from quarantine, e.g.:\n. /projects/mice/share/arch/linux64/quarantine_toothless/environment\n"
+}
+
+
+###############################################################################
+model_command ()
+{
+	PIPEBASE=$1; shift
+	PIPENAME=$1; shift
+	ADD=$@
+
+	LABELS=/projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc
+	TEMPLATE=/projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc
+	# could use different init model here to improve 'dents' in the frontal cortex
+	INITMODEL=/projects/mice/matthijs/binb-model-16-basket-july-2011/native
+	##PROTOCOL=  # protocol not specified, thus MICe-build-model uses default basket protocol
+
+	for f in $LABELS $TEMPLATE; do
+		[ -f "$f" ] || { echo "ERROR: could not find file: $f"; exit 1; }
+	done
+
+	MBMCMD="MICe-build-model.pl -pipeline-base $PIPEBASE -pipeline-name $PIPENAME -sge -sge-queue $QUEUE -lsq6 -lsq12 -nlin-registration-method mincANTS -nlin -nlin-stats -classified-atlas $LABELS -anatomical-atlas $TEMPLATE -resample-atlas -init-model $INITMODEL $ADD"
+
+	echo $MBMCMD
+}
+
+get_files ()
+{
+#FILES=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$filename),'\n');"))
+#IDS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$id),'\n');"))
+#UNIQIDS=($(echo ${IDS[*]} | tr ' ' '\n' | sort | uniq))
+
+mkdir -p origs
+
+M=${#FILES[*]}
+for ((i=0;i<$M;i++)); do
+	[ -f "${FILES[$i]}" ] || { echo "ERROR: could not find file: ${FILES[$i]}" > /dev/stderr; exit 1; }
+	[ -z "$NOLINK" ] && (cd origs; ln -sf $VERBOSE ../${FILES[$i]} `basename ${FILES[$i]}`;)
+	ORIGS="$ORIGS origs/`basename ${FILES[$i]}`"
+done
+ORIGS=($ORIGS)
+}
+
+flat_reg ()
+{
+SUFFIX=flat
+FLATSCRIPT="${OUTBASE}_${SUFFIX}.sh"
+PBASEFLAT=$PWD/$SUFFIX
+PNAME=$DEFAULTPNAME
+
+mkdir -p $PBASEFLAT
+#echo -n "`model_command $PBASEFLAT $PNAME $ADDCMDS -bootstrap-model $PBASEFLAT/${PNAME}_bootstrap`" > $FLATSCRIPT
+echo -n "`model_command $PBASEFLAT $PNAME $ADDCMDS`" > $FLATSCRIPT
+echo    " ${ORIGS[*]}" >> $FLATSCRIPT && chmod 755 $FLATSCRIPT
+[ -z "$VERBOSE" ] || echo "saved $FLATSCRIPT"
+}
+
+pair_reg ()
+{
+SUFFIX=pair
+PAIRSCRIPT="${OUTBASE}_${SUFFIX}.sh"; > $PAIRSCRIPT
+BLURSCRIPT="${OUTBASE}_${SUFFIX}_blur.sh"
+PBASEPAIR=$SUFFIX
+
+# for each id save build model command
+mkdir -p $PBASEPAIR
+
+# blur every file first
+blur $PBASEPAIR ${ORIGS[*]} > $BLURSCRIPT
+chmod 755 $BLURSCRIPT
+[ -z "$VERBOSE" ] || echo "saved $BLURSCRIPT"
+
+
+M=${#ORIGS[*]}
+[ -z "$VERBOSE" ] || echo "registering $M images, total of $(($M*$M-$M)) registrations"
+for ((i=0;i<$M;i++)); do
+	for ((j=0;j<$M;j++)); do
+		[ "${ORIGS[$i]}" = "${ORIGS[$j]}" ] && continue
+		#    OUTDIR     IN           REF
+		ants $PBASEPAIR ${ORIGS[$j]} ${ORIGS[$i]} >> $PAIRSCRIPT
+	done
+done
+
+chmod 755 $PAIRSCRIPT
+[ -z "$VERBOSE" ] || echo "saved $PAIRSCRIPT"
+}
+
+resample_jacobians ()
+{
+PBASEFLAT=flat/all
+PBASEPAIR=pair
+ROOTNLIN=${PBASEFLAT}_nlin/nlin-3.mnc
+RESAMPSCRIPT="${OUTBASE}_resample.sh"; > $RESAMPSCRIPT
+
+# -trilinear -sinc
+INTERP=-trilinear
+
+JACSUFFIX=${1:-'-log-determinant-fwhm0.1.mnc'}
+[ ${#JACSUFFIX} -eq 3 ] && JACSUFFIX="-log-determinant-fwhm${1}.mnc"
+
+
+M=${#ORIGS[*]}
+for ((i=0;i<$M;i++)); do
+	for ((j=0;j<$M;j++)); do
+		[ "${ORIGS[$i]}" = "${ORIGS[$j]}" ] && continue
+		IN=`basename ${ORIGS[$j]} .mnc`
+		JAC=$PBASEPAIR/$IN/${IN}_to_`basename ${ORIGS[$i]} .mnc`_grid_0${JACSUFFIX}
+
+# final nlin might need to be combined with lsq12; maybe do this in temporary directory to save space
+# xfmconcat -clobber exp2_01.jan2011_distortion_corrected-avg-lsq12.xfm exp2_01.jan2011_distortion_corrected-final-nlin.xfm lsq12+final-nlin.xfm
+		XFM=${PBASEFLAT}_processed/${IN%-resampled-lsq12}/transforms/${IN%-resampled-lsq12}-final-nlin.xfm
+
+		echo "mincresample -clobber -2 -quiet $INTERP -transformation $XFM -like $ROOTNLIN $JAC ${JAC%.mnc}-to-nlin.mnc; " >> $RESAMPSCRIPT
+		
+	done
+done
+chmod 755 $RESAMPSCRIPT
+[ -z "$VERBOSE" ] || echo "saved $RESAMPSCRIPT"
+
+#[ -f "$ROOTNLIN" ] || { echo "ERROR: could not find root nlin: $ROOTNLIN"; exit 1; }
+#for ((i=0;i<$N;i++)); do
+#	#JACS=$PBASEHIER/${UNIQIDS[$i]}_processed/${UNIQIDS[$i]}_*/stats-volumes/${UNIQIDS[$i]}*${JACSUFFIX}
+#
+#	#XFMBASE=$ROOTPBASE/${PNAME}_processed/${UNIQIDS[$i]}_nlin-3/transforms/${UNIQIDS[$i]}_nlin-3
+#	XFM1=${XFMBASE}-avg-lsq12.xfm
+#	XFM2=${XFMBASE}-final-nlin.xfm
+#	XFMOUT=${XFM2/-final-nlin.xfm/-to-root.xfm}
+#
+#	[ -f "$XFM1" ] || { echo "Warning: could not find transformation: $XFM1" > /dev/stderr; continue; }
+#	[ -f "$XFM2" ] || { echo "Warning: could not find transformation: $XFM2" > /dev/stderr; continue; }
+#	echo -n "xfmconcat -clobber $XFM1 $XFM2 $XFMOUT; " >> $RESAMPSCRIPT
+#
+#	for g in $JACS; do
+#		[ -f "$g" ] || { echo "ERROR: could not find jacobian: $g"; exit 1; }
+#		echo -n "mincresample -clobber -2 -quiet $INTERP -transformation $XFMOUT -like $ROOTNLIN $g ${g/-log-determinant/-to-root-log-determinant}; " >> $RESAMPSCRIPT
+#	done
+# 	echo >> $RESAMPSCRIPT
+#done
+
+}
+
+blur () {
+	# commands for _blur/_dxyz in appropiate directories for all intput files
+	BLUROUTBASE=$1; shift
+	SMOOTH=0.056
+
+	for f in $@; do
+		OUTDIR=$BLUROUTBASE/`basename $f .mnc`
+		echo "mkdir -p $OUTDIR; mincblur -clobber -gradient -fwhm $SMOOTH $f $OUTDIR/`basename $f .mnc`;"
+	done
+}
+
+ants () {
+	OUTDIR=$1
+	IN=$2
+	REF=$3
+
+	INGRAD=${OUTDIR}/`basename $IN .mnc`/`basename $IN .mnc`_dxyz.mnc
+	REFGRAD=${OUTDIR}/`basename $REF .mnc`/`basename $REF .mnc`_dxyz.mnc
+
+	FWHM=0.1
+	ANTSOUTBASE=$OUTDIR/`basename $IN .mnc`/`basename ${IN} .mnc`_to_`basename ${REF} .mnc`
+	ITERS="-i 100x100x100x100"
+	#ITERS="-i 1x1x1x1"
+	#MASK="-x ${IN}_mask"
+
+	A="mincANTS 3 --number-of-affine-iterations 0 -m \"CC[$IN,$REF,1,3]\" -m \"CC[$INGRAD,$REFGRAD,1,3]\" -t 'SyN[0.5]' -r 'Gauss[5,1]' $ITERS -o ${ANTSOUTBASE}.xfm"
+
+	# transform xfm to vector field (bounding box from input.mnc)
+	#B="minc_displacement -clobber $IN ${ANTSOUTBASE}.xfm ${ANTSOUTBASE}_grid_0+affine.mnc"
+
+	# get jacobian (get log determinant); grid_0 might still contain some affine
+	C="displacement_determinant.pl -fwhm $FWHM ${ANTSOUTBASE}_grid_0.mnc ${ANTSOUTBASE}_grid_0-log-determinant-fwhm${FWHM}.mnc"
+
+	echo "time $A; $C"
+}
+
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+while getopts o:fpxX:vL opt
+do
+	case "$opt" in
+		o)  OUTBASE="$OPTARG";;
+		f)  FLATREG=1;;
+		p)  PAIRREG=1;;
+		x)  GETJACS=1;;
+		X)  GETJACS=1; JAC="$OPTARG";;
+		v)  VERBOSE="-v";;
+		L)  NOLINK=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+FILES=($@)
+
+[ $# -lt 2 ] && { usage; exit 1; }
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set" > /dev/stderr; exit 1; }
+
+[ -z "$OUTBASE" ] && { echo "ERROR: OUTBASE not specified" > /dev/stderr; exit 1; }
+
+get_files
+
+[ -z "$FLATREG" ] || flat_reg
+[ -z "$PAIRREG" ] || pair_reg
+[ -z "$GETJACS" ] || resample_jacobians $JAC
+
+exit 0
+
+
+
+
+################################################################################
+
+#xfmconcat hier/Exp1_10_processed/Exp1_10_1/transforms/Exp1_10_1-avg-lsq12.xfm hier/Exp1_10_processed/Exp1_10_1/transforms/Exp1_10_1-final-nlin.xfm Exp1_10-all.xfm
+#-avg-lsq12.xfm
+#-final-nlin.xfm
+
+# transform xfm to vector field (bounding box from input.mnc)
+# minc_displacement [options] input.mnc input.xfm output_grid.mnc
+
+# get jacobian
+# /micehome/jlerch/src/displacement_determinant.pl -fwhm 0.1
+
+
