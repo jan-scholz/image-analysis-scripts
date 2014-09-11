@@ -1,0 +1,67 @@
+#!/usr/bin/python
+#
+# copyright jan.scholz@phenogenomics.ca @ MICe, Toronto, Canada
+# 2013-03-26
+
+import os
+import sys
+from numpy import zeros
+from pyminc.volumes.factory import *
+from tempfile import NamedTemporaryFile
+from shutil import move
+
+def usage():
+	usage = """usage: %s XMIN XSIZE [YMIN YSIZE [ZMIN ZSIZE]] INPUT OUTPUT
+       everything refers to voxel dimensions
+       setting SIZE to -1 will set it to the full extent of the image in that direction
+       !!! x-dimension currently referes to the first dimension ('not xspace'), see mincinfo !!!""" % os.path.basename(sys.argv[0])
+	return(usage)
+
+
+def apply_roi(inputfile, outputfile, roi):
+	invol = volumeFromFile(inputfile)
+	inmax = list(invol.data.shape)
+	ndims = len(inmax)
+	roi   = roi[:(ndims*2)]
+	roimin   = [0]*ndims
+	roisizes = inmax[:]
+	roimin[0:(len(roi)/2)]   = roi[::2]
+	roisizes[0:(len(roi)/2)] = roi[1::2]
+	roimax = [k if j<0 else i+j for i,j,k in zip(roimin, roisizes, inmax)]   # replace -1 with image size
+
+	for i,j,k in zip(roimin,roimax,inmax):
+		if i < 0 or j > k :
+			sys.stderr.write('roi minimum (%i) or maximum (%i) outside range [0,%i]\n' % (i,j,k))
+			sys.exit(1)
+
+	tmp = zeros(invol.data.shape)
+	tmp[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]] = invol.data[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]]
+
+	f = NamedTemporaryFile(suffix='.mnc',delete=False); tmpfile = f.name; f.close()
+	tmpvol = volumeFromInstance(invol, tmpfile)
+	tmpvol.data = tmp
+	tmpvol.writeFile()
+	tmpvol.closeVolume()
+	move(tmpfile,outputfile)
+
+
+###############################################################################
+# MAIN
+###############################################################################
+def main(argv):
+	args = sys.argv[1:]
+
+	if len(args) < 4 or len(args) % 2:
+		print usage()
+		sys.exit(1)
+
+	inputfile = args[-2]
+	outputfile = args[-1]
+	roi = [int(i) for i in args[:-2]]
+
+	apply_roi(inputfile, outputfile, roi)
+
+if __name__ == "__main__":
+	sys.exit(main(sys.argv))
+
+
