@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+# given masks and surfaces in atlas space calculate cortical thickness for every subject
+#
+# jan.scholz@phenogenomics.ca @ MICe, Toronto, Canada
+# 2013-03-28
+
+
+PBASE=hr
+CTXLABEL=thickness_label_left.mnc
+
+for f in origs/*mnc; do
+	OUT=x
+	g=`basename $f`
+XFM=${PBASE}_processed/$g/transforms/${g}-to-lsq6.xfm
+	mincresample -clobber -like $f -transformation $XFM -keep_real_range -nearest_neighbour $CTXLABEL $OUT
+	transform_objects smooth_surface_left.obj $XFM  ${g}_surface_left.obj
+	laplacian_thickness -from_grid NRXN1a_version_1_average_votedlabels_thickness_labels_left.mnc -use_third_boundary -object_eval surface_left_20-33k-10_v2.1.obj left_thickness.txt
+	diffuse -kernel 0.5 -iterations 1000 -parametric 0 surface_left_20-33k-10_v2.1.obj left_thickness.txt left_thickness_smooth0.5.txt
+done
+
+
+
