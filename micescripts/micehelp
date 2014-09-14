@@ -1,3 +1,85 @@
+#!/usr/bin/python
+#
+# provide help for common questions
+#
+# 2013-04-01
+
+
+
+import os
+import sys
+from optparse import OptionParser
+import json
+import re
+
+
+class helpitem():
+	def __init__(self,d):
+		self.title = d['title']
+		self.keywords = d['keywords']
+		self.command = d['command']
+		self.comment = d['comment']
+	def __str__(self):
+		s = '%s (%s)\n' % (self.title.upper(),', '.join(self.keywords))
+		s += '=' * len(s) + '\n'
+		s += 'COMMAND: %s\n' % self.command
+		s += 'COMMENT: %s\n' % self.comment
+		return s
+		
+
+
+
+###############################################################################
+# MAIN
+###############################################################################
+def main(args):
+	usage = "usage: %prog [options] SEARCHTERM.."
+	parser = OptionParser(usage)
+	parser.add_option("-v", "--verbose", help='verbose output', action='store_true', default=False)
+	(options, args) = parser.parse_args()
+
+	if len(args) < 1:
+		parser.print_usage()
+		sys.exit(1)
+
+	f = open(sys.argv[0],'r')
+
+	
+	jsondata = False
+	s = ''
+	for line in f:
+		if bool(re.search('# *<json>',line)):
+			jsondata = True
+			continue
+		if bool(re.search('# *</json>',line)):
+			jsondata = False
+		if jsondata:
+			s += line
+
+	helplist = json.loads(s)
+
+	for d in helplist:
+		for a in args:
+			if a in d['title'].split() or a in d['keywords']:
+				print helpitem(d)
+	
+# return results in order weighted according to keyword match
+# print only existing fields
+
+# commandline options
+# print sorted keyword list
+# make printing comments an option
+
+# easier json syntax, eg no trailing commas
+
+
+if __name__ == "__main__":
+	sys.exit(main(sys.argv))
+
+
+
+
+
 #! /bin/bash
 #
 # should one day become a hub for help on micescripts
@@ -10,70 +92,101 @@
 # tar --exclude=backup -czvf backup/1207_bin_backup.tar.gz .
 
 
-echo "NOT IMPLEMENTED YET"
+#echo "NOT IMPLEMENTED YET"
+#
+#
+#echo "###############################################################################"
+#echo "# VRECON                                                                      #"
+#echo "###############################################################################"
+#echo
+#echo "# PATH"
+#echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin;'
+#echo
+#echo "# BASKET"
+#echo "/projects/mice/jbishop/bin/vrecon -vmap fse_504_250_6_3 -shiftppe2 -croplpe -pmod fid vol"
+#echo
+#echo "# DTI"
+#echo "adjust procpar"
+#echo "/projects/mice/jbishop/bin/vrecon -vmap ../fse_168_160_6_1b -shiftppe2 -noclip fid DW_Recon"
+#
+#echo
+#echo "###############################################################################"
+#echo "# R                                                                           #"
+#echo "###############################################################################"
+#echo
+#echo "# CLEAN WORKSPACE, CHANGE WIDTH"
+#echo "rm(list=ls(all=TRUE))"
+#echo "options(width=120)"
+#echo "options(width=getOption('width'))"
+#echo
+#echo "# change / display current working directory"
+#echo "getwd(); setwd()"
+#echo
+#echo "# READ IN DATA FRAME FROM R COMMAND LINE"
+#cat << EOF
+#data <- read.table(header=T, con <- textConnection('
+# subject sex condition before after change
+#       1   F   placebo   10.1   6.9   -3.2
+# '))
+#close(con)
+#EOF
+#echo
+#echo '#order sort'
+#echo 'dd[with(dd, order(-z, b)), ]'
+#echo
+#echo "one-tailed 0.05"
+#echo "qt(1-0.05,10)"
+#echo
+#echo "two-tailed 0.05"
+#echo "qt(1-0.05/2,10)"
+#echo
+#echo "F(k-1,n-k)"
+#echo "qf(1-0.05, 3, 23)"
+#echo "1-pf(3.4668, 2, 21)"
+#
+#echo
+#echo "###############################################################################"
+#echo "# SGE                                                                         #"
+#echo "###############################################################################"
+#echo
+#echo "# CLEAN UP _PROCESSED DIRECTORIES"
+#echo 'n=3; for d in `find . -maxdepth $n -type d -name \*_processed`; do echo $d; rm -v $d/*/tmp/*; done'
+#
+#echo
+#echo "###############################################################################"
+#echo "# BASKET REGISTRATION (16)                                                    #"
+#echo "###############################################################################"
+#echo
+#echo "# DISTORTION CORRECTION"
+#echo "for f in origs/*.mnc; do sge_batch -q diddl.q,all.q,bigmem.q /micehome/matthijs/32-bit/bin/distortion_correction_january_2011.pl -output-dir discorr/ \$f; done"
+#echo
+#echo "# REGISTRATION"
+#echo ". /projects/mice/share/arch/linux64/quarantine_toothless/environment"
+#echo
+#echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base \$PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy discorr/*.mnc"
+#echo "# -lsq12-max-pairs 0"
+#echo
+#echo "find . -regex '.*\(run\|fail\|lock\).*'"
+#echo
+#
 
+# [{"d": "D", "e": 0.0, "f": [1, 3]}]
 
-echo "###############################################################################"
-echo "# VRECON                                                                      #"
-echo "###############################################################################"
-echo
-echo "# PATH"
-echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/runtime/glnxa64:/projects/mice/share/arch/linux-x86_64-glibc2_3/matlab2010b/bin/glnxa64:/projects/mice/jbishop/bin;'
-echo
-echo "# BASKET"
-echo "/projects/mice/jbishop/bin/vrecon -vmap fse_504_250_6_3 -shiftppe2 -croplpe -pmod fid vol"
-echo
-echo "# DTI"
-echo "adjust procpar"
-echo "/projects/mice/jbishop/bin/vrecon -vmap ../fse_168_160_6_1b -shiftppe2 -noclip fid DW_Recon"
+# <json>
+[
+	{
+		"title": "basket registration",
+		"keywords": [ "mice-build-model" ],
+		"command": "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base $PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy discorr/*.mnc",
+		"comment": "runs mincANTS pipeline with the NRXN1 atlas, adapt pipeline-base and pipeline-name, run in quarantaine"
+	},
+	{
+		"title": "distortion correction",
+		"keywords": [ "basket", "mice-build-model" ],
+		"command": "for f in origs/*.mnc; do sge_batch -q diddl.q,all.q,bigmem.q /micehome/matthijs/32-bit/bin/distortion_correction_january_2011.pl -output-dir discorr/ $f; done",
+		"comment": "runs all brains in parallel"
+	}
+]
+# </json>
 
-echo
-echo "###############################################################################"
-echo "# R                                                                           #"
-echo "###############################################################################"
-echo
-echo "# CLEAN WORKSPACE, CHANGE WIDTH"
-echo "rm(list=ls(all=TRUE))"
-echo "options(width=120)"
-echo "options(width=getOption('width'))"
-echo
-echo "# change / display current working directory"
-echo "getwd(); setwd()"
-echo
-echo "# READ IN DATA FRAME FROM R COMMAND LINE"
-cat << EOF
-data <- read.table(header=T, con <- textConnection('
- subject sex condition before after change
-       1   F   placebo   10.1   6.9   -3.2
- '))
-close(con)
-EOF
-echo
-echo '#order sort'
-echo 'dd[with(dd, order(-z, b)), ]'
-
-echo
-echo "###############################################################################"
-echo "# SGE                                                                         #"
-echo "###############################################################################"
-echo
-echo "# CLEAN UP _PROCESSED DIRECTORIES"
-echo 'n=3; for d in `find . -maxdepth $n -type d -name \*_processed`; do echo $d; rm -v $d/*/tmp/*; done'
-
-echo
-echo "###############################################################################"
-echo "# BASKET REGISTRATION (16)                                                    #"
-echo "###############################################################################"
-echo
-echo "# DISTORTION CORRECTION"
-echo "for f in origs/*.mnc; do sge_batch -q diddl.q,all.q,bigmem.q /micehome/matthijs/32-bit/bin/distortion_correction_january_2011.pl -output-dir discorr/ \$f; done"
-echo
-echo "# REGISTRATION"
-echo ". /projects/mice/share/arch/linux64/quarantine_toothless/environment"
-echo
-echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base $PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy discorr/*.mnc"
-echo "# -lsq12-max-pairs 0"
-echo
-echo "find . -regex '.*\(run\|fail\|lock\).*'"
-echo
 
