@@ -1,4 +1,4 @@
-runmodel <- function(table,mask,form,outbase,columns=NULL,random='',anova=FALSE) {
+runmodel <- function(table,mask,form,outbase,columns=NULL,random='',anova=FALSE, verbose=F) {
 # formula and random are strings
 	library(RMINC)
 
@@ -15,8 +15,10 @@ runmodel <- function(table,mask,form,outbase,columns=NULL,random='',anova=FALSE)
 		form <- gsub('^ *filename *~ *','x ~ ',form)
 		if (grepl('[()]',random)) warning('no brackets allowed in random effect')
 
-		cat('form',form,'\n')
-		cat('rand',rand,'\n')
+		if (verbose) {
+			cat('formula',form,'\n')
+			cat('random',random,'\n')
+		}
 
 		attach(table)
 		cat('running mincLme \n')
