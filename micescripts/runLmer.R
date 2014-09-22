@@ -1,5 +1,7 @@
 runLmer <- function(table,mask,formula,outbase,column=0,cores=4) {
 
+	#library(lme4)
+
 	doLmer <<- function(x) {
 		l <- lmer(as.formula(formula), data=table)
 		# return t values for every column
