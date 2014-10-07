@@ -4,6 +4,7 @@
 # Copyright 2012, jan.scholz@phenogenomics.ca at MICe
 
 DEFAULTSUFFIX="-resampled-final-nlin"
+DEFAULTSUBDIR='resampled'
 
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 for f in miceconvert fslview; do
@@ -16,6 +17,7 @@ usage ()
 	echo "Usage: $(basename $0) [-n] MBMBASE"
 	echo "  -n          normalize (based on central 3rd)"
 	echo "  -s          suffix (default: $DEFAULTSUFFIX)"
+	echo "  -d          subdir (default: $DEFAULTSUBDIR)"
 	echo "  MBMBASE     MiceBuildModel base (requires MBMBASE_processed)"
 	echo
 }
@@ -24,11 +26,12 @@ usage ()
 ###############################################################################
 # MAIN                                                                        #
 ###############################################################################
-while getopts ns:v opt
+while getopts ns:d:v opt
 do
     case "$opt" in
       n) NORM=1;;
       s) SUFFIX=${OPTARG};;
+      d) SUBDIR=${OPTARG};;
       v) VERBOSE=1;;
       \?)  usage; exit 1;;
     esac
@@ -39,6 +42,7 @@ shift `expr $OPTIND - 1`
 
 
 SUFFIX=${SUFFIX:-$DEFAULTSUFFIX}
+SUBDIR=${SUBDIR:-$DEFAULTSUBDIR}
 
 MBMBASE=${1}_processed
 if [ ! -d "$MBMBASE" ]; then
@@ -51,7 +55,7 @@ TDIR=$TMPDIR/$$; mkdir -p $TDIR
 trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
 
 
-for f in $MBMBASE/*/resampled/*${SUFFIX}.mnc; do
+for f in $MBMBASE/*/$SUBDIR/*${SUFFIX}.mnc; do
 	[ -f "$f" ] || { echo "ERROR: could not find file $f"; exit 1; }
 	miceconvert $f $TDIR/tmp
 	X=$((`fslval $TDIR/tmp dim1` / 3))
@@ -62,7 +66,7 @@ for f in $MBMBASE/*/resampled/*${SUFFIX}.mnc; do
 done
 
 ALL=; MEAN=0; SD=1;
-for f in $MBMBASE/*/resampled/*${SUFFIX}.mnc; do
+for f in $MBMBASE/*/$SUBDIR/*${SUFFIX}.mnc; do
 	OUT=$TDIR/`basename $f .mnc`
 	miceconvert $f $OUT
 	ALL="$ALL $OUT"
