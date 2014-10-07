@@ -1,0 +1,19 @@
+#! /bin/bash
+# create masks from labels, dilate/erode to remove spurious holes/gaps
+# used to create masks for ex-vivo atlases NRXN, Crawley, ...
+
+ATLAS=$1
+[ -z "$ATLAS" ] && { echo "specify atlas/labels file"; exit 1; }
+
+OUT=${2:-"`basename $ATLAS .mnc`_mask.mnc"}
+
+T=$TMPDIR/$$
+
+autocrop  -clobber -quiet -isoexpand 20% $ATLAS ${T}_atlasmask.mnc
+mincmorph -clobber -successive 'B[0.5:999]DDDDDDDDEEEEEE' ${T}_atlasmask.mnc ${T}_atlasmask2.mnc
+# for highres
+#mincmorph -clobber -successive 'B[0.5:999]DDDDDDDDDDDDDEEEEEEEEEE' ${T}_atlasmask.mnc ${T}_atlasmask2.mnc
+autocrop  -clobber -quiet -byte -from $ATLAS ${T}_atlasmask2.mnc $OUT
+
+rm -vf ${T}_atlasmask.mnc ${T}_atlasmask2.mnc
+
