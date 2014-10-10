@@ -4,20 +4,89 @@
 #
 # jan.scholz@phenogenomics.ca @ MICe, Toronto, Canada
 # 2013-03-28
+#
+# CL=/projects/mice/jscholz/tmp/atlas_thickness/NRXN1a_thickness_masks/NRXN1a_version_1_average_votedlabels_thickness_labels_left.mnc
+# CS=/projects/mice/jscholz/tmp/atlas_thickness/NRXN1a_thickness_masks/NRXN1a_version_1_average_votedlabels_cortex_o3thr3.5k_left_smooth.obj
 
 
-PBASE=hr
-CTXLABEL=thickness_label_left.mnc
+usage ()
+{
+	echo "Usage: $(basename $0) -p PIPELINEBASE -l CORTEXLABEL -s CORTEXSURFACE -o OUTDIR INPUTFILES.."
+	echo "  -p PIPELINEBASE    basename of registration pipeline"
+	echo "  -l CORTEXLABEL     label of inside 0, cortex 5, outside 10, resistance 20"
+	echo "  -s CORTEXSURFACE   (smoothed) OBJ surface as a projection target"
+	echo "  -o OUTDIR          output directory"
+	echo "  -a LABELS          project labels on surface (i.e. average along streamline)"
+	#echo "  -x XFM             transform CORTEXLABEL and CORTEXSURFACE first"
+	#echo "                     "
+	echo "  INPUTFILES         input files to registration"
+	echo
+	echo "WORKS ONLY IF LABELS AND SURFACES ARE IN SAME SPACE AS PIPELINEs ATLAS!!!"
+}
 
-for f in origs/*mnc; do
-	OUT=x
-	g=`basename $f`
-XFM=${PBASE}_processed/$g/transforms/${g}-to-lsq6.xfm
-	mincresample -clobber -like $f -transformation $XFM -keep_real_range -nearest_neighbour $CTXLABEL $OUT
-	transform_objects smooth_surface_left.obj $XFM  ${g}_surface_left.obj
-	laplacian_thickness -from_grid NRXN1a_version_1_average_votedlabels_thickness_labels_left.mnc -use_third_boundary -object_eval surface_left_20-33k-10_v2.1.obj left_thickness.txt
-	diffuse -kernel 0.5 -iterations 1000 -parametric 0 surface_left_20-33k-10_v2.1.obj left_thickness.txt left_thickness_smooth0.5.txt
+
+###############################################################################
+# MAIN
+###############################################################################
+
+while getopts p:l:s:o:a:v opt
+do
+	case "$opt" in
+		p)  PBASE="$OPTARG";;
+		l)  CTXLABEL="$OPTARG";;
+		s)  CTXSURF="$OPTARG";;
+		o)  OUTDIR="$OPTARG";;
+		a)  LABELS="$OPTARG";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
 done
+shift $(expr $OPTIND - 1)
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+[ -z "$TMPDIR" ]     && { echo "ERROR: \$TMPDIR not set" > /dev/stderr; exit 1; }
+[ -z "$PBASE" ]      && { echo "ERROR: PIPELINEBASE not specified" > /dev/stderr; exit 1; }
+[ -d "${PBASE}_processed" ] || { echo "ERROR: PIPELINEBASE_processed not found"; exit 1; }
+[ -z "$OUTDIR" ]     && { echo "ERROR: OUTDIR not specified" > /dev/stderr; exit 1; }
+[ -f "${CTXLABEL}" ] || { echo "ERROR: CORTEXLABEL not found" > /dev/stderr; exit 1; }
+[ -f "${CTXSURF}" ]  || { echo "ERROR: CORTEXSURFACE not found" > /dev/stderr; exit 1; }
+
+ATLASXFM=${PBASE}_resampled_atlas/nlin4.xfm
+[ -f "${ATLASXFM}" ] || { echo "ERROR: atlas transformation not found"; exit 1; }
+
+FWHM="0.5"
 
 
+mkdir -p $OUTDIR
+
+for f in $@; do
+	g=`basename $f .mnc`
+
+	if [ `echo $g | tail -c 6` = "-lsq6" ]; then
+		XFM=${PBASE}_processed/${g%-lsq6}/transforms/${g%-lsq6}-final-to_lsq6.xfm
+		OUT=$OUTDIR/${g%-lsq6}
+	else
+		XFM=${PBASE}_processed/$g/transforms/${g}-to-native.xfm
+		OUT=$OUTDIR/${g}
+	fi
+
+	# from atlas to nlin to input file
+	CONCATXFM=$OUT/${g}.xfm
+	A="mkdir -p $OUT"
+	B="[ -f "$CONCATXFM" ] || xfmconcat -clobber $ATLASXFM $XFM $CONCATXFM"
+	C="mincresample -clobber -keep_real_range -nearest_neighbour -like $f -transformation $CONCATXFM $CTXLABEL $OUT/`basename $CTXLABEL`"
+	D="transform_objects $CTXSURF $CONCATXFM $OUT/`basename $CTXSURF`"
+	E="laplacian_thickness -from_grid $OUT/`basename $CTXLABEL` -use_third_boundary -object_eval $OUT/`basename $CTXSURF` $OUT/`basename $CTXSURF .obj`_thickness.txt"
+	F="diffuse -kernel $FWHM -iterations 1000 -parametric 0 $OUT/`basename $CTXSURF` $OUT/`basename $CTXSURF .obj`_thickness.txt $OUT/`basename $CTXSURF .obj`_thickness_fwhm${FWHM}.txt"
+
+	if [ ! -z "$LABELS" ]; then
+		G1="mincresample -clobber -keep_real_range -nearest_neighbour -like $f -transformation $CONCATXFM $LABELS $OUT/`basename $LABELS`"
+		G2="laplacian_thickness -from_grid $OUT/`basename $CTXLABEL` -use_third_boundary -object_eval $OUT/`basename $CTXSURF` -average_along_streamlines $OUT/`basename $LABELS` $OUT/`basename $CTXSURF .obj`_labels.txt"
+		G="$G1; $G2"
+	fi
+
+	echo "$A; $B; $C; $D; $E; $F; $G"
+
+done
 
