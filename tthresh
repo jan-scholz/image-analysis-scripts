@@ -1,0 +1,22 @@
+#!/bin/bash
+#
+
+usage ()
+{
+	echo "Usage: $(basename $0) DF P.."
+	echo "  DF     degrees of freedom"
+	echo "  P      p-threshold"
+}
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+DF=$1; shift
+P=${1:-0.05}; shift
+
+echo "two-tailed, df = $DF"
+
+for i in $P $@; do
+echo -n "p < $i: "
+R --vanilla -q -e "qt(1-${i}/2,${DF})" | awk '/\[1\]/ {print $2}'
+done
+
