@@ -10,19 +10,21 @@ usage ()
 	echo "Usage: $(basename $0) [-o OUTDIR] -b BASE"
 	echo "  -b BASE        mouse build model base"
 	echo "  -o OUTDIR      output directory (default: BASE_masks)"
-	echo "  -n             convert to nifti format"
+	echo "  -m             mask individual brains (NOT WORKING YET)"
+	echo "  -n             convert atlas-spaced output to nifti format"
 	#echo "  -t TEMPLATE    the average, as a background for viewing"
-	#echo "  -a ATLAS       labeled brain structures, used to generate the masks"
+	echo "  -a ATLAS       labeled brain structures, used to generate the masks"
 }
 
 
-while getopts t:b:o:nv opt
+while getopts t:b:o:a:mnv opt
 do
     case "$opt" in
       b)  MBMBASE="${OPTARG}";;
       o)   OUTDIR="${OPTARG}";;
       #t) TEMPLATE="${OPTARG}";;
-      #a)    ATLAS="${OPTARG}";;
+      a)    ATLAS="${OPTARG}";;
+  	  m)  MASKING="lsq6";;
   	  n)    NIFTI=true;;
   	  v)  VERBOSE="-v";;
       \?)  usage; exit 1;;
@@ -50,15 +52,31 @@ trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SI
 autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
 mincmorph -clobber -successive 'B[0.5:999]DDDDDDEEEEEE' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
 autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+#mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc -start 34,68,45 -count 172,340,225  # use this when -from takes the wron y-extent
+
 
 autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
 mincmorph -clobber -successive 'B[0.5:999]DDDDDD' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
 autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+#mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc -start 34,68,45 -count 172,340,225
+
 
 cp ${VERBOSE} $ATLAS $OUTDIR/atlas.mnc
 cp ${VERBOSE} $TEMPLATE $OUTDIR/template.mnc
 
 
+
+# backproject atlas mask to individuals
+if [ ! -z ${MASKING} ]; then
+	for XFM in ${MBMBASE}_processed/*/transforms/*-final-to_lsq6.xfm; do
+		IMG=${MBMBASE}_processed/*/resampled/`basename $XFM -final-to_lsq6.xfm`-lsq6.mnc
+		OUT=$OUTDIR/`basename $IMG .mnc`_mask.mnc
+		echo "mincresample -clobber -quiet -nearest_neighbour -like $IMG -transform $XFM $OUTDIR/mask_dil.mnc $OUT"
+	done
+fi
+
+
+# nifti conversion
 if [ ! -z ${NIFTI} ]; then
 	which miceconvert || { echo "ERROR: could not convert to nifti, miceconvert not found"; exit 1; }
 	for f in $OUTDIR/mask.mnc  $OUTDIR/mask_dil.mnc $OUTDIR/atlas.mnc $OUTDIR/template.mnc; do
