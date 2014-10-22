@@ -1,0 +1,35 @@
+#! /bin/bash
+# run R's p.adjust on a minc file
+
+
+ADJUSTMETHOD="fdr"
+
+usage ()
+{
+	echo "Usage: $(basename $0) -m MASK INPUT.."
+	echo "  -m MASK           adjust only in this area"
+	echo "  -a ADJUSTMETHOD   e.g., fdr (default: $ADJUSTMETHOD)"
+	echo "  INPUT             MINC file(s)"
+}
+
+while getopts m:a:v opt
+do
+	case "$opt" in
+		m)  MASK="$OPTARG";;
+		a)  ADJUSTMETHOD="$OPTARG";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+[ $# -lt 1 ] && { usage; exit 1; }
+[ -f "${MASK}" ] || { echo "ERROR: could not find mask: $MASK"; exit 1; }
+
+
+for i in $@; do
+	OUT=`basename $i .mnc`_corr.mnc
+	R --no-save --no-restore -q -e "library(RMINC); m <- mincGetVolume('${MASK}'); v <- mincGetVolume('${i}'); v[m>0.5] <- p.adjust(v[m>0.5],'${ADJUSTMETHOD}'); mincWriteVolume(v, '${OUT}', clobber=T)"
+	[ -z "$VERBOSE" ] || echo "saving $OUT"
+done
+
