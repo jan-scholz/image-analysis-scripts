@@ -11,14 +11,15 @@ from tempfile import NamedTemporaryFile
 from shutil import move
 
 def usage():
-	usage = """usage: %s XMIN XSIZE [YMIN YSIZE [ZMIN ZSIZE]] INPUT OUTPUT
+	usage = """usage: %s [-l] XMIN XSIZE [YMIN YSIZE [ZMIN ZSIZE]] INPUT OUTPUT
+       -l   assume labelfile (ensures rounded integer values)
        everything refers to voxel dimensions
        setting SIZE to -1 will set it to the full extent of the image in that direction
        !!! x-dimension currently referes to the first dimension ('not xspace'), see mincinfo !!!""" % os.path.basename(sys.argv[0])
 	return(usage)
 
 
-def apply_roi(inputfile, outputfile, roi):
+def apply_roi(inputfile, outputfile, roi, labelfile=False):
 	invol = volumeFromFile(inputfile)
 	inmax = list(invol.data.shape)
 	ndims = len(inmax)
@@ -38,7 +39,7 @@ def apply_roi(inputfile, outputfile, roi):
 	tmp[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]] = invol.data[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]]
 
 	f = NamedTemporaryFile(suffix='.mnc',delete=False); tmpfile = f.name; f.close()
-	tmpvol = volumeFromInstance(invol, tmpfile)
+	tmpvol = volumeFromInstance(invol, tmpfile, labels=labelfile)
 	tmpvol.data = tmp
 	tmpvol.writeFile()
 	tmpvol.closeVolume()
@@ -51,6 +52,11 @@ def apply_roi(inputfile, outputfile, roi):
 def main(argv):
 	args = sys.argv[1:]
 
+	labelfile = False
+	if args[0] == '-l':
+		labelfile = True
+		args = args[1:]
+
 	if len(args) < 4 or len(args) % 2:
 		print usage()
 		sys.exit(1)
@@ -59,7 +65,7 @@ def main(argv):
 	outputfile = args[-1]
 	roi = [int(i) for i in args[:-2]]
 
-	apply_roi(inputfile, outputfile, roi)
+	apply_roi(inputfile, outputfile, roi, labelfile)
 
 if __name__ == "__main__":
 	sys.exit(main(sys.argv))
