@@ -77,11 +77,13 @@ if __name__ == "__main__":
 
 #    if options.clean:
 #        outlabels.data[::] = inlabels.data[::]
-#        #print('foo')
-#        #for l in range(min(inlabels.data[::]),max(inlabels.data[::])+1):
-#        #   if options.verbose:
-#        #       print "Mapping: %d" % l
-#        #   outlabels.data[outlabels.data > 0.5] = 1
+#        print('foo')
+#        #print sum((inlabels.data>10) & (inlabels.data<20))
+#		#print sum(where((inlabels.data >= 6) & (inlabels.data <=10)))
+#        for l in range(floor(amin(inlabels.data[::])),ceil(amax(inlabels.data[::]))):
+#            if options.verbose:
+#                print "Mapping: %f" % l
+#            outlabels.data[(inlabels.data>(float(l)-0.5)) & (inlabels.data<(float(l)+0.5))] = int(l)
 
     # write to file
     outlabels.writeFile()
