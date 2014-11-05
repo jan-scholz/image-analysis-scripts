@@ -1,0 +1,21 @@
+#! /bin/bash
+# substitute line after match
+
+usage ()
+{
+	echo "Usage: $(basename $0) FILE MATCH REPLACEMENT"
+	echo "replaces row after match with REPLACEMENT"
+}
+
+[ $# -lt 3 ] && { usage; exit 1; }
+
+
+IN=$1
+MATCH=$2
+shift 2
+REPLACEMENT=$@
+
+grep "$MATCH" $IN > /dev/null || { echo "ERROR: no match" > /dev/stderr; exit 1; }
+
+sed -e "`nl -v2 $IN | grep \"$MATCH\" | awk '{print $1}' | head -n1` c $REPLACEMENT" $IN
+
