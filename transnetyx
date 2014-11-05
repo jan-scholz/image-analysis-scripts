@@ -1,0 +1,17 @@
+#! /bin/bash
+
+
+usage ()
+{
+	echo "Usage: echo \"A1 321 -- ...\" | $(basename $0)"
+	echo "pipe Transnetyx genotyping results into script for usage on Lims"
+}
+
+
+[ "$( tty )" = 'not a tty' ] || { usage; exit 1; }
+
+echo
+awk '{printf "%s%s,",$2,$3}' -
+echo
+echo
+
