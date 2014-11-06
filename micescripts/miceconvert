@@ -11,29 +11,35 @@ done
 
 usage ()
 {
-	echo "Usage: $(basename $0) INPUT OUTPUT"
+	echo "Usage: $(basename $0) [MNC2NII_ARGS] INPUT OUTPUT"
 	echo "  Converts between MINC and NIFTI format"
 	echo "  INPUT and OUTPUT are .mnc and .nii.gz files"
-	echo
+	echo "  NII2MNCARGS        nii2mnc options, e.g. -unsigned -short"
 }
 
 
 ###############################################################################
 # MAIN                                                                        #
 ###############################################################################
-while getopts v opt
-do
-    case "$opt" in
-      v) VERBOSE="-v";;
-      \?)  usage; exit 1;;
-    esac
-done
-shift `expr $OPTIND - 1`
+#while getopts v opt
+#do
+#    case "$opt" in
+#      v) VERBOSE="-v";;
+#      \?)  usage; exit 1;;
+#    esac
+#done
+#shift `expr $OPTIND - 1`
+
+VERBOSE=
 
 [ $# -lt 2 ] && { usage; exit 1; }
 
+NII2MNCARGS="${@:1:$((${#}-2))}"
+INPUT="${@: -2:1}"
+OUTPUT="${@: -1}"
 
-FILETYPE=`micetest $1`
+
+FILETYPE=`micetest $INPUT`
 [ $? -ne 0 ] && exit 1
 [ -z "$VERBOSE" ] || echo FILETYPE $FILETYPE
 
@@ -46,11 +52,12 @@ if [ NIFTI = "${FILETYPE:0:5}" ]; then
 
 	echo nifti-minc
 
-	INPUT=`remove_ext $1`
-	OUTPUT=${2%.mnc}.mnc
+	INPUT=`remove_ext $INPUT`
+	OUTPUT=${OUTPUT%.mnc}.mnc
 
 	fslchfiletype NIFTI $INPUT $TDIR/nii
 	nii2mnc $TDIR/nii.nii $TDIR/minc.mnc 2> /dev/null
+	[ -z "$NII2MNCARGS" ] || { mv $TDIR/minc.mnc $TDIR/minc2.mnc; mincreshape -clobber $NII2MNCARGS $TDIR/minc2.mnc $TDIR/minc.mnc; }
 
 	[ -f $TDIR/minc.mnc ] || { echo "ERROR: conversion did not work" >/dev/stderr; exit 1; }
 	mkdir -p `dirname $OUTPUT`
@@ -60,11 +67,11 @@ elif [ MINC = "${FILETYPE:0:4}" ]; then
 
 	echo minc-nifti
 
-	INPUT=$1
-	OUTPUT=`remove_ext $2`
+	INPUT=$INPUT
+	OUTPUT=`remove_ext $OUTPUT`
 
 # these should be INTEGER not FLOATS!!!!
-#	TOTALSUM=`printf "%.0f" $(mincstats -sum $INPUT | awk '{print $2}')`
+#	TOTALSUM=`printf "%.0f" $(mincstats -sum $INPUT | awk '{print $OUTPUT}')`
 #	  BINSUM=`printf "%.0f" $(mincstats -range 1,1 -count $INPUT | awk '{print $3}')`
 #
 #	if [ "$TOTALSUM" -eq "$BINSUM" ]; then
