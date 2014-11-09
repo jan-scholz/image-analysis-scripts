@@ -15,7 +15,9 @@ QUEUE="bigmem.q,all.q,diddl.q"
 
 # ADDCMDS should be an option? but what about bootstrap?
 # bootstrap-downsample-factor circumvents bug that resamples jacobians to half the resolution
-ADDCMDS="-no-lsq6 -no-registration-accuracy -cleanup -bootstrap-downsample-factor 1"
+#ADDCMDS="-no-lsq6 -no-registration-accuracy -cleanup -bootstrap-downsample-factor 1"
+# use these when starting from non-lsq6 aligned brains
+ADDCMDS="-lsq6 -no-lsq6-large-rotations -no-registration-accuracy -cleanup -bootstrap-downsample-factor 1"
 
 
 # default pipeline name (flat and root)
@@ -25,7 +27,7 @@ usage ()
 {
 	echo "Usage: $(basename $0) [-f|-h|-r] -o OUTBASE TABLE"
 	echo "  -o OUTBASE    basename of file containing MICe-build-model commands"
-	echo "  TABLE         association between file filename, id, and scan time"
+	echo "  TABLE         association between file filename, id, and scan (time)"
 	echo "  "
 	echo "  -f            flat registration, all images to one template"
 	echo "  -h            hierarchical registration (1), generate (subject-specific templates)"
@@ -45,11 +47,13 @@ model_command ()
 	ADD=$@
 
 	PROTOCOL=/home/jscholz/resources/memri/mincANTS_nlin_protocol_live.pl
-	LABELS=/home/jscholz/resources/memri/MEMRI_Atlas_Dec52012.mnc
-	TEMPLATE=/projects/mice/share/mouse-brain-atlases/in-vivo-MEMRI/in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_average.mnc
+	#LABELS=/home/jscholz/resources/memri/MEMRI_Atlas_Dec52012.mnc
+	LABELS=/projects/mice/share/mouse-brain-atlases/Dorr_2008/in-vivo-MEMRI/Dorr_2008_on_in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_labels.mnc
+	#TEMPLATE=/projects/mice/share/mouse-brain-atlases/Dorr_2008/in-vivo-MEMRI/in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_average.mnc
+	TEMPLATE=/projects/mice/share/mouse-brain-atlases/Dorr_2008/in-vivo-MEMRI/Dorr_2008_on_in-vivo-MEMRI_version_2_WORK_IN_PROGRESS_average.mnc
 
 	for f in $PROTOCOL $LABELS $TEMPLATE; do
-		[ -f "$f" ] || { echo "ERROR: could not find file: $f"; exit 1; }
+		[ -f "$f" ] || { echo "ERROR: could not find file: $f" > /dev/stderr; exit 1; }
 	done
 
 
@@ -69,9 +73,13 @@ mkdir -p origs
 
 M=${#FILES[*]}
 for ((i=0;i<$M;i++)); do
-	[ -f "${FILES[$i]}" ] || { echo "ERROR: could not find file: ${FILES[$i]}"; exit 1; }
-	#ln -sf $VERBOSE ${FILES[$i]} origs/${IDS[$i]}_${SCANS[$i]}.mnc
-	ORIGS="$ORIGS origs/${IDS[$i]}_${SCANS[$i]}.mnc"
+	[ -f "${FILES[$i]}" ] || { echo "ERROR: could not find file: ${FILES[$i]}" > /dev/stderr; exit 1; }
+	RENAME=origs/${IDS[$i]}_${SCANS[$i]}.mnc
+	if [ -e "$RENAME" ]; then
+		echo "Warning: file/link already exists, overwriting: $RENAME"
+	fi
+	ln -sf $VERBOSE ../${FILES[$i]} $RENAME
+	ORIGS="$ORIGS $RENAME"
 done
 ORIGS=($ORIGS)
 }
