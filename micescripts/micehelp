@@ -190,3 +190,14 @@ if __name__ == "__main__":
 # </json>
 
 
+
+
+# gnu parallel with table input sevearal arguments
+
+cat rename.txt | parallel --colsep '\t' ln -sv {1} {2}
+
+
+# delete files older than
+
+# find /tmp/ -type f -mtime +2 -iname 'fsl_*' -exec rm -v {} \;
+
