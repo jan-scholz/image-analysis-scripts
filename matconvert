@@ -3,10 +3,9 @@
 
 usage ()
 {
-	echo "Usage: $(basename $0) INMAT"
+	echo "Usage: $(basename $0) INMAT [OUTMAT]"
 	echo "INMAT   either FSL or MINC format .mat/.xfm file"
 }
-
 
 while getopts i:v opt
 do
@@ -18,17 +17,46 @@ done
 shift $(expr $OPTIND - 1)
 
 [ $# -lt 1 ] && { usage; exit 1; }
+[ -f "$1" ] || { echo "ERROR: could not find INMAT: $1"; exit 1; }
+
+TMPMAT=$TMPDIR/$$.xfm
 
 if [ "`head -n1 $1`" = "MNI Transform File" ]; then
-	tail -n3 $1 | sed -e 's/;$//g'
+	tail -n3 $1 | sed -e 's/;$//g' > $TMPMAT
 else
-cat <<EOF
-MNI Transform File
-
-Transform_Type = Linear;
-Linear_Transform =
-EOF
-sed -e '$s/$/;/' $1
-#sed -i -e '$s/$/;/' $2
+	ROT="-rotations `avscale --allparams $1 | egrep 'Rotation Angles \(' | cut -d'=' -f2 | python -c "import sys; import math; print ' '.join([str(float(e)*math.pi/180) for e in sys.stdin.readline().split()])"`"
+	TRANS="-translation `avscale --allparams $1 | awk -F= '/Translations \(/ {print $2}'`"
+	param2xfm -clobber $ROT $TRANS $TMPMAT
 fi
 
+if [ $# -lt 2 ]; then
+	cat $TMPMAT
+else
+	cp $TMPMAT $2
+fi
+
+rm $TMPMAT
+exit 0
+
+
+# Rotation Angles (x,y,z) [rads]
+# Translations (x,y,z) [mm]
+# Scales (x,y,z)
+# Skews (xy,xz,yz)
+
+# -center:      Force center of rotation and scale.
+# -translation: Translation x,y,z.
+# -rotations:   Rotation angle (in degrees).
+# -scales:      Scaling factors.
+# -shears:      Scaling factors.
+
+#else
+#cat <<EOF
+#MNI Transform File
+#
+#Transform_Type = Linear;
+#Linear_Transform =
+#EOF
+#sed -e '$s/$/;/' $1
+##sed -i -e '$s/$/;/' $2
+#fi
