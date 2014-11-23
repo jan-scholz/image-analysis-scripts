@@ -34,13 +34,22 @@ runmodel <- function(table,mask,form,outbase,columns=NA,random='',anova=FALSE, a
 	}
 
 	colnames <- dimnames(out)[[2]]
+	if (verbose) {
+		cat('\ncolumn names: ', paste(1:length(colnames),colnames, sep=') ', collapse=', '), '\n\n')
+	}
+	selectedcolumns <- c()
 
 	if (is.null(columns)) {
 		selectedcolumns <- c()
 	} else if (is.na(columns)) {
-		start <- 1
-		if (colnames[start] == 'F-statistic') start <- 2
-		selectedcolumns <- start:length(colnames)
+		for (x in 1:length(colnames)) {
+			if ( !grepl('(Intercept)',colnames[x]) & !grepl('F-statistic',colnames[x]) ) {
+				selectedcolumns <- c(selectedcolumns,x)
+			}
+		}
+#		start <- 1
+#		if (colnames[start] == 'F-statistic') start <- 2
+#		selectedcolumns <- start:length(colnames)
 	} else {
 		for (x in columns) {
 			if(!is.numeric(x) | x>length(colnames)) {
@@ -52,11 +61,12 @@ runmodel <- function(table,mask,form,outbase,columns=NA,random='',anova=FALSE, a
 
 	for (c in selectedcolumns) {
 		outname <- paste(outbase,gsub('[()]','',colnames[c]),sep='_')
+		outname <- paste(gsub(' - ','-',outname),sep='_')
 		mincWriteVolume(out, paste(outname,".mnc",sep=""),     c,clobber=T)
 		if (adjust %in% c("holm", "hochberg", "hommel", "bonferroni", "BH", "BY", "fdr")) {
 			mincWriteVolume(  q, paste(outname,"_fdr.mnc",sep=""), c,clobber=T)
 		}
-		cat('saved', outname, '\n')
+		cat('saved', outname, '\n\n')
 	}
 
 	con <- file(paste(outbase,".txt",sep=""), open="wt")
