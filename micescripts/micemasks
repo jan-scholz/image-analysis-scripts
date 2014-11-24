@@ -51,13 +51,15 @@ trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SI
 
 autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
 mincmorph -clobber -successive 'B[0.5:999]DDDDDDEEEEEE' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
-autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+#autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+mincresample -clobber -nearest -like $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
 #mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc -start 34,68,45 -count 172,340,225  # use this when -from takes the wron y-extent
 
 
 autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
 mincmorph -clobber -successive 'B[0.5:999]DDDDDD' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
-autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+#autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+mincresample -clobber -nearest -like $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
 #mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc -start 34,68,45 -count 172,340,225
 
 
