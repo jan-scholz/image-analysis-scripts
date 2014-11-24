@@ -5,6 +5,11 @@
 #
 # version Wed Jun 29
 
+SCALE=4
+OUTDIR=slicesdir
+BORDER=1
+ROTATE=0
+BACKGROUND=black
 
 usage ()
 {
@@ -15,22 +20,23 @@ usage ()
 	echo "     -coronal  N.."
 	echo "     -sagittal N.."
 	echo
+	echo "  MONTAGE           global setting for the montage"
+	echo "     -scale  N          changes the size of the image, default $SCALE"
+	echo "     -border N          changes the width of the border, default $BORDER"
+	echo "     -background COLOR  changes the width of the border, default $BACKGROUND"
+	echo
 	echo "  MINCPIKOPTIONS    adjust intensity ranges, e.g. -image_range MIN MAX"
 	echo
 	echo "  EXAMPLE"
 	echo "     `basename $0` MINCFILE.. "
 	echo "     `basename $0` MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
 	echo "     `basename $0` -image_range 0 1 MINCFILE.. -axial 10 -coronal 50 60 -axial 20"
+	echo "     `basename $0` -image_range 0 1 MINCFILE.. -scale 8 -background grey -axial 10"
 }
 
 
 [ "$#" -lt 1 ] && { usage; exit 1; }
-
-SCALE=10
-OUTDIR=slicesdir
-
 [ "$*" = "" ]    && { echo "ERROR: slice options not specified";       exit 1; }
-
 
 mkdir -p $OUTDIR
 REPORT=$OUTDIR/index.html;
@@ -38,12 +44,13 @@ REPORT=$OUTDIR/index.html;
 echo "<html><body>" > $REPORT
 
 PIKOPTS=
-while [ ! "$1" = "${1%.mnc}.mnc" ]; do
+while [ ! "${1: -4}" = ".mnc" -a ! -z "$1" ]; do
 	PIKOPTS="$PIKOPTS $1"; shift;
 done
 
 IMAGES=
-while [ "$1" = "${1%.mnc}.mnc" ]; do
+while [ "${1: -4}" = ".mnc" ]; do
+	[ -f "$1" ] || { echo "ERROR: could not find image $1"; exit 1; }
 	IMAGES="$IMAGES $1"; shift;
 done
 
@@ -55,6 +62,18 @@ done
 
 i=0
 for ARG in $@; do
+
+	case $1 in
+		-scale)       SCALE=$2;      shift 2;;
+		-border)      BORDER=$2;     shift 2;;
+		-rotate)      ROTATE=$2;     shift 2;;
+		-background)  BACKGROUND=$2; shift 2;;
+	esac
+	
+	#[ "$1" = "-scale" ] && { SCALE=$2; shift 2; }
+	#[ "$1" = "-border" ] && { BORDER=$2; shift 2; }
+	#[ "$1" = "-rotate" ] && { ROTATE=$2; shift 2; }
+
 	if [ "$1" = "-axial" -o "$1" = "-coronal" -o "$1" = "-sagittal" ]; then
 		SLICE=$1; shift
 		while [ "$1" -le 100 -a "$1" -ge 0 ] 2> /dev/null; do
@@ -71,7 +90,6 @@ for ARG in $@; do
 					"-coronal")  N=$(($YLEN * $1 / 100)) ;;
 					"-sagittal") N=$(($XLEN * $1 / 100)) ;;
 				esac
-
 				mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
 				let j++
 			done
@@ -87,13 +105,12 @@ for g in $IMAGES; do
 	TILES=`ls $OUTDIR/$(basename ${g%.mnc})$(printf "%04i" $i)*.png`
 	if [ ! -z "$TILES" ]; then
 		OUTIM=`printf "image%04i" $i`.png 
-		montage -border 0 -background black -tile `echo $TILES | wc -w`x1 $TILES $OUTDIR/$OUTIM
+		montage -rotate $ROTATE -geometry +${BORDER}+${BORDER} -border 0 -background $BACKGROUND -tile `echo $TILES | wc -w`x1 $TILES $OUTDIR/$OUTIM
 		echo "<img src=\"$OUTIM\" title="$g" >`basename $g`<br>" >> $REPORT
 		rm $TILES
 		let i++
 	fi
 done
-
 
 echo "</body></html>" >> $REPORT
 
