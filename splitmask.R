@@ -4,6 +4,9 @@ splitmask <- function (mask, basename='', n = 2, order = 'descending')
 {
 	if (n < 2) stop('n needs to be at least 2')
 	if (!file.exists(mask)) stop('Could not find mask: ', mask)
+
+	library(RMINC)
+
 	maskV <- mincGetVolume(mask)
     nVoxels <- sum(maskV > 0.5)
 
