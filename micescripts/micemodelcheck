@@ -67,6 +67,7 @@ done
 
 ALL=; MEAN=0; SD=1;
 for f in $MBMBASE/*/$SUBDIR/*${SUFFIX}.mnc; do
+	[ -z "$VERBOSE" ] || echo "converting file: $f"
 	OUT=$TDIR/`basename $f .mnc`
 	miceconvert $f $OUT
 	ALL="$ALL $OUT"
