@@ -6,17 +6,19 @@ ADJUSTMETHOD="fdr"
 
 usage ()
 {
-	echo "Usage: $(basename $0) -m MASK INPUT.."
-	echo "  -m MASK           adjust only in this area"
-	echo "  -a ADJUSTMETHOD   e.g., fdr (default: $ADJUSTMETHOD)"
-	echo "  INPUT             MINC file(s)"
+	echo "Usage: $(basename $0) -m MASK P-VALUE-IMAGE"
+	echo "  -m MASK            adjust only in this area"
+	echo "  -a ADJUSTMETHOD    e.g., fdr (default: $ADJUSTMETHOD), use \"\" to create uncorr signed image"
+	echo "  -t T-VALUE-IMAGE   create a signed version of the adjusted image, i.e. sign(t)-sign(t)*q"
+	echo "  INPUT              MINC file(s)"
 }
 
-while getopts m:a:v opt
+while getopts m:a:t:v opt
 do
 	case "$opt" in
 		m)  MASK="$OPTARG";;
 		a)  ADJUSTMETHOD="$OPTARG";;
+		t)  TMAP="$OPTARG";;
 		v)  VERBOSE=1;;
 		\?)  usage; exit 1;;
 	esac
@@ -24,12 +26,30 @@ done
 shift $(expr $OPTIND - 1)
 
 [ $# -lt 1 ] && { usage; exit 1; }
+PMAP=$1
+[ -f "${PMAP}" ] || { echo "ERROR: could not find p-value image: $PMAP"; exit 1; }
 [ -f "${MASK}" ] || { echo "ERROR: could not find mask: $MASK"; exit 1; }
 
+OUTBASE=${PMAP%.mnc}
 
-for i in $@; do
-	OUT=`basename $i .mnc`_corr.mnc
-	R --no-save --no-restore -q -e "library(RMINC); m <- mincGetVolume('${MASK}'); v <- mincGetVolume('${i}'); v[m>0.5] <- p.adjust(v[m>0.5],'${ADJUSTMETHOD}'); mincWriteVolume(v, '${OUT}', clobber=T)"
-	[ -z "$VERBOSE" ] || echo "saving $OUT"
-done
+
+if [ ! -z "$ADJUSTMETHOD" ]; then
+	R --no-save --no-restore -q -e "library(RMINC); m <- mincGetVolume('${MASK}'); v <- mincGetVolume('${PMAP}'); v[m>0.5] <- p.adjust(v[m>0.5],'${ADJUSTMETHOD}'); mincWriteVolume(v, '${OUTBASE}-corr.mnc', clobber=T)"
+	OUTBASE=${OUTBASE}-corr
+	[ -z "$VERBOSE" ] || echo "saving ${OUTBASE}.mnc"
+else
+	[ -z "$VERBOSE" ] || echo "no correction"
+fi
+
+
+if [ ! -z "$TMAP" ]; then
+	[ -f "${TMAP}" ] || { echo "ERROR: could not find mask: $TMAP"; exit 1; }
+	[ -z "$VERBOSE" ] || echo "creating signed version of ${OUTBASE}.mnc"
+	minccalc -quiet -clobber -expression 'sign=A[0]>=0?1:-1; result=sign-sign*A[1]; mask=A[2]>0.5?1:0; result*mask' $TMAP ${OUTBASE}.mnc $MASK ${OUTBASE}-sign.mnc
+	OUTBASE=${OUTBASE}-sign
+	[ -z "$VERBOSE" ] || echo "saving ${OUTBASE}.mnc"
+fi
+
+
+exit 0
 
