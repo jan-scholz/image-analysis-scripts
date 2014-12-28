@@ -20,7 +20,7 @@ def usage():
 
 
 def apply_roi(inputfile, outputfile, roi, labelfile=False):
-	invol = volumeFromFile(inputfile)
+	invol = volumeFromFile(inputfile, labels=labelfile)
 	inmax = list(invol.data.shape)
 	ndims = len(inmax)
 	roi   = roi[:(ndims*2)]
@@ -39,7 +39,7 @@ def apply_roi(inputfile, outputfile, roi, labelfile=False):
 	tmp[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]] = invol.data[roimin[0]:roimax[0],roimin[1]:roimax[1],roimin[2]:roimax[2]]
 
 	f = NamedTemporaryFile(suffix='.mnc',delete=False); tmpfile = f.name; f.close()
-	tmpvol = volumeFromInstance(invol, tmpfile, labels=labelfile)
+	tmpvol = volumeFromInstance(invol, tmpfile, labels=labelfile, volumeType="ushort")  # default it ubyte and not taken from invol!!!
 	tmpvol.data = tmp
 	tmpvol.writeFile()
 	tmpvol.closeVolume()
@@ -51,6 +51,10 @@ def apply_roi(inputfile, outputfile, roi, labelfile=False):
 ###############################################################################
 def main(argv):
 	args = sys.argv[1:]
+
+	if not len(args):
+		print usage();
+		sys.exit(1)
 
 	labelfile = False
 	if args[0] == '-l':
