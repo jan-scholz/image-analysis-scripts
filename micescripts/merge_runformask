@@ -1,0 +1,71 @@
+#! /bin/bash
+# merge output from runformask.R
+
+shopt -s expand_aliases
+alias parallel='/micehome/jlerch/linux-experimental/bin/parallel'
+
+PREFIX=out
+
+usage ()
+{
+	echo "Usage: $(basename $0) BASE"
+	echo "  BASE        output base"
+	echo "  -P          parallel mode"
+	echo "  -p N        specify number of parallel jobs"
+	echo "  -a          archive parts files to save space"
+	#echo "  -x          prefix (default: $PREFIX)"
+	echo "  -v          verbouse mode, give more information"
+}
+
+
+while getopts aPp:x:v opt
+do
+	case "$opt" in
+		a)  ARCHIVE=1;;
+		P)  PARALLEL=" ";;
+		p)  PARALLEL="-j${OPTARG}";;
+#		x)  PREFIX="${OPTARG}";;
+		v)  VERBOSE="-v";;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+
+OUTBASE=${1%/}
+[ -d "$OUTBASE" ] || { echo "ERROR: directory does not exist: $OUTBASE"; exit 1; }
+
+
+#SUFF=`ls $OUTBASE/out0001_*.mnc | sed -e 's/.*out0001_//g'`
+SUFF=`ls $OUTBASE/*.mnc | grep -o '_[^_]*\.mnc' | sort | uniq`
+
+[ -z "$VERBOSE" ] || echo "found `echo $SUFF| wc -w` filetypes"
+[ -z "$VERBOSE" ] || { echo "$SUFF" | tr ' ' '\n'; echo; }
+
+FILES=
+if [ ! -z "$PARALLEL" ]; then
+	echo parallel
+	for s in $SUFF; do
+		#FILES="$FILES $OUTBASE/*${s}"
+		echo "mincmath -clobber -add $OUTBASE/*${s} $OUTBASE/${OUTBASE}${s}"
+	done | parallel -u $VERBOSE $PARALLEL
+	echo "archive not possible in parallel mode"
+else
+	for s in $SUFF; do
+		[ -z "$VERBOSE" ] || echo "$s, merging `echo $OUTBASE/*${s} | wc -w` files"
+		FILES="$FILES `echo $OUTBASE/*${s}`"
+		mincmath -clobber -add $OUTBASE/*${s} $OUTBASE/${OUTBASE}${s};
+	done
+fi
+
+
+if [ ! -z "$ARCHIVE" ]; then
+	#echo "tar $VERBOSE --remove-files -czf $OUTBASE/parts.tar.gz $FILES"
+	tar $VERBOSE --remove-files -czf $OUTBASE/parts.tar.gz $FILES
+fi
+
+exit 0
+
