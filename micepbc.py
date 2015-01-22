@@ -1,5 +1,8 @@
 #!/usr/bin/python
 #
+# /projects/mice/jscholz/rot/reg_hr_new2/hr_all_lsq6s+flip_resampled_atlas
+#
+
 
 import sys
 
@@ -43,3 +46,36 @@ if __name__ == "__main__":
 
 # 
 
+prep="""
+cd /projects/mice/jscholz/rot/reg_hr_new2/hr_all_lsq6s+flip_processed
+
+LIKE=../hr_all_lsq6s+flip_nlin/nlin-3.mnc
+ATLAS=../hr_all_lsq6s+flip_resampled_atlas/resampled_atlas_new.mnc
+DIRS="rot0?_hr_lsq6"
+
+# align to native space (here lsq6?)
+for d in $DIRS; do
+IN=$ATLAS
+OUT=lr_12/${d}_`basename $IN .mnc`-resampled-final-nlin
+A="mincresample -2 -clobber -nearest_neighbour -like $LIKE -invert_transformation -transform $d/transforms/${d}-final-nlin.xfm $IN ${OUT}.mnc";
+IN=${d}/resampled/${d}-resampled-lsq12.mnc
+OUT=lr_12/${d}_`basename $IN .mnc`-resampled-final-nlin
+C="mincresample -2 -clobber -tricubic -like $LIKE -invert_transformation -transform $d/transforms/${d}-final-nlin.xfm $IN ${OUT}.mnc";
+echo "$A; $C"
+done | parallel -v
+
+# downsample to speed up testing
+for d in $DIRS; do
+IN=$ATLAS
+OUT=lr_12/${d}_`basename $IN .mnc`-resampled-final-nlin
+B="`autocrop -noexecute -clobber -isostep 0.1 ${OUT}.mnc ${OUT}_step0-100.mnc| cut -d' ' -f5-` -nearest_neighbour"
+IN=${d}/resampled/${d}-resampled-lsq12.mnc
+OUT=lr_12/${d}_`basename $IN .mnc`-resampled-final-nlin
+D=`autocrop -noexecute -clobber -isostep 0.1 ${OUT}.mnc ${OUT}_step0-100.mnc| cut -d' ' -f5-`
+echo "$B; $D"
+done | parallel -v
+
+
+#D="mincresample -clobber -like lr_12/${d}_`basename $IN .mnc`-resampled-final-nlin_step0-100.mnc ${OUT}.mnc ${OUT}_step0-100.mnc"
+
+"""
