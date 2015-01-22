@@ -1,0 +1,38 @@
+#! /bin/bash
+# compose stats image using one stats as alpha for the other
+# for rylan
+
+RED=/projects/mice/jscholz/tmp/rylan-spline/raytrace/hotred_new
+BLUE=/projects/mice/jscholz/tmp/rylan-spline/raytrace/hotblue_new
+
+#RED=/projects/mice/share/arch/linux64/quarantine_toothless/share/mice-minc-tools/hotred
+#BLUE=/projects/mice/share/arch/linux64/quarantine_toothless/share/mice-minc-tools/hotblue
+
+SLICES=$1
+
+
+for i in $SLICES; do
+	echo creating slice $i	
+
+	make_slice /projects/moush/rylan/TgCRND8/LongitudinalTgCRND8Data/LongTgCRND8_nlin/nlin-3.mnc slice_cor${i}.obj y v $i
+
+	ray_trace -output slice_cor${i}_9weeks.rgb -nolight -gray 691 1280 /projects/moush/rylan/TgCRND8/LongitudinalTgCRND8Data/LongTgCRND8_nlin/nlin-3_masked.mnc 0 1 slice_cor${i}.obj -size 800 800 -bg black -sup 2 -back
+	convert  slice_cor${i}_9weeks.rgb bg_${i}.png
+
+
+	ray_trace -output slice_cor${i}_9weeks_stat1.rgb -nolight -under transparent -usercc $RED 4 24 /projects/mice/jscholz/tmp/rylan-spline/bs_d0-2e0-002df2R050r9-20-1/bs_d0-2e0-002df2R050r9-20-1_5.mnc -1 1 -under transparent -usercc $BLUE -4 -24 /projects/mice/jscholz/tmp/rylan-spline/bs_d0-2e0-002df2R050r9-20-1/bs_d0-2e0-002df2R050r9-20-1_5.mnc -1 1 slice_cor${i}.obj -size 800 800 -bg black -sup 2 -back
+	convert slice_cor${i}_9weeks_stat1.rgb  stat1_${i}.png
+
+	ray_trace -output slice_cor${i}_9weeks_stat2.rgb -nolight -gray -0.5 1 /projects/mice/jscholz/tmp/rylan-spline/bs_d0-2e0-002df2R050r4-20-1/bs_d0-2e0-002df2R050r4-20-1_3.mnc -1 1 slice_cor${i}.obj -size 800 800 -bg black -sup 2 -back
+
+	# quantile range
+	#ray_trace -output slice_cor${i}_9weeks_stat2.rgb -nolight -gray -3 13 /projects/mice/jscholz/tmp/rylan-spline/bs_d0-2e0-002df2R050r4-20-1/bs_d0-2e0-002df2R050r4-20-1_3.mnc -1 1 slice_cor${i}.obj -size 800 800 -bg black -sup 2 -back
+	convert slice_cor${i}_9weeks_stat2.rgb  stat2_${i}.png
+
+	convert stat1_${i}.png stat2_${i}.png -alpha off -compose copy_opacity -composite PNG32:stats_alpha_${i}.png
+	composite -compose Over stats_alpha_${i}.png bg_${i}.png compose_${i}.png
+
+done
+
+
+#ray_trace -output slice_cor${i}_9weeks.rgb -nolight -gray 691 1280 /projects/moush/rylan/TgCRND8/LongitudinalTgCRND8Data/LongTgCRND8_nlin/nlin-3_masked.mnc 0 1 -under transparent -usercc /projects/mice/share/arch/linux64/quarantine_toothless/share/mice-minc-tools/hotred 2.42 11 /projects/moush/rylan/TgCRND8/LongitudinalTgCRND8Data/weeksIgene_w9-20_centred9_3.mnc 0 0.9 -under transparent -usercc /projects/mice/share/arch/linux64/quarantine_toothless/share/mice-minc-tools/hotblue -2.42 -11 /projects/moush/rylan/TgCRND8/LongitudinalTgCRND8Data/weeksIgene_w9-20_centred9_3.mnc 0 0.9 slice_cor${i}.obj -size 800 800 -bg black -crop -sup 5 -back; done
