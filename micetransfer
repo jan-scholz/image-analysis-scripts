@@ -74,7 +74,8 @@ mkdir -p \$JOBDIR
 
 screen -S $REGNAME -p 0 -X stuff "JOBDIR=\$JOBDIR"
 screen -S $REGNAME -p 0 -X stuff "FIFO=\$JOBDIR/fifo1"
-screen -S $REGNAME -p 0 -X stuff "scinet_dispatcher.py -p \\\$FIFO -d \\\$JOBDIR -t 180"
+#screen -S $REGNAME -p 0 -X stuff "scinet_dispatcher.py -p \\\$FIFO -d \\\$JOBDIR -t 180"
+screen -S $REGNAME -p 0 -X stuff "cd \\\$JOBDIR; scinet_dispatcher.py -p \\\$FIFO -d \\\$JOBDIR -t 180"
 
 # create new window
 screen -S $REGNAME -X screen
