@@ -1,0 +1,95 @@
+#! /bin/bash
+# check bias and intensity in images
+
+
+# estimate from combined mask!!!!
+
+get_mask() {
+	OUTBASE=$1
+	IN=$2
+
+	# bias correction
+	nu_estimate -clobber -quiet -distance 4 -iterations 10 -stop 0.0001 -fwhm 0.15 -shrink 4 -lambda 1.0e-6 $IN ${OUTBASE}.imp > /dev/null > /dev/null
+	imp2field -clobber -quiet -like $IN ${OUTBASE}.imp ${OUTBASE}_bias.mnc > /dev/null
+	mincmath -clobber -quiet $IN -div ${OUTBASE}_bias.mnc ${OUTBASE}_corr.mnc
+	
+	# masking
+	inormalize -clobber -quiet -ratioOfMedians -const 1000 ${OUTBASE}_corr.mnc ${OUTBASE}_norm.mnc > /dev/null
+	mincmath -clobber -quiet -const 5000 -gt ${OUTBASE}_norm.mnc ${OUTBASE}_mask.mnc
+
+	echo ${OUTBASE}_mask.mnc
+}
+
+
+process () {
+
+	OUTBASE=$1
+	MASK=$2
+	IN=$3
+
+	#echo processing $OUTBASE $MASK $IN
+
+#echo a
+	# bias correction
+	nu_estimate -clobber -quiet -mask $MASK -distance 4 -iterations 10 -stop 0.0001 -fwhm 0.15 -shrink 4 -lambda 1.0e-6 $IN ${OUTBASE}.imp > /dev/null > /dev/null
+	imp2field -clobber -quiet -like $IN ${OUTBASE}.imp ${OUTBASE}_bias.mnc > /dev/null
+	#mincmath -clobber -quiet $IN -div ${OUTBASE}_bias.mnc ${OUTBASE}_corr.mnc
+	
+#echo b
+	# masking
+	#inormalize -clobber -quiet -mask $MASK -ratioOfMedians -const 1000 ${OUTBASE}_corr.mnc ${OUTBASE}_norm.mnc > /dev/null
+	#mincmath -clobber -quiet -const 5000 -gt ${OUTBASE}_norm.mnc ${OUTBASE}_mask.mnc
+
+#echo c
+	# stats
+	# variance of bias field
+	BIASVAR=`mincstats -mask_floor 1 -mask $MASK -variance ${OUTBASE}_bias.mnc | awk '{print $2}'`
+	PCT10=`mincstats -mask_floor 1 -mask $MASK -pctT 10 ${OUTBASE}_bias.mnc | awk -F: '{print $2}'`
+	PCT90=`mincstats -mask_floor 1 -mask $MASK -pctT 90 ${OUTBASE}_bias.mnc | awk -F: '{print $2}'`
+	BIASRANGE=`python -c "print $PCT90 - $PCT10"`
+
+	# mean of input image
+	IMGMEANFG=`mincstats -mask_floor 0.5 -mask $MASK -mean $IN | awk '{print $2}'`
+	IMGMEANBG=`mincstats -mask_ceil 0.5 -mask $MASK -mean $IN | awk '{print $2}'`
+	
+	#echo $BIASRANGE $IMGMEAN 
+	echo $BIASVAR $BIASRANGE $IMGMEANFG $IMGMEANBG
+}
+
+TDIR=$TMPDIR/$$; mkdir -p $TDIR
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+#IN=$1
+#OUTBASE=$TDIR/`basename $IN .mnc`
+
+[ -f "$1" -a -f "$2" ] || { echo "ERROR: please specify two files"; exit 1; }
+
+
+#process $1 $TDIR/$(basename $1 .mnc) 2> /dev/null
+
+
+MASK=`get_mask $TDIR/$(basename $1 .mnc) $1 2> /dev/null`
+echo processed $MASK
+#process $TDIR/$(basename $3 .mnc) $MASK $3
+
+STATS1=`process $TDIR/$(basename $2 .mnc) $MASK $2 2> /dev/null`
+#echo st $IN xxx $STATS1
+STATS2=`process $TDIR/$(basename $3 .mnc) $MASK $3 2> /dev/null`
+
+#> `basename $IN .mnc`_stats.txt
+
+echo $STATS1 $STATS2 > `basename $1 .mnc`_stats.txt
+
+
+rm -rf $TDIR
+exit 0
+
+
+
+
+# library(ggplot2)
+# library(grid)
+# t <- read.table('stats.txt')
+# t$nr <- c(10:15,1:9)
+# ggplot(t,aes(x=V1,y=V3,label=nr)) + geom_segment(aes(xend=V2,yend=V4), arrow=arrow(length=unit(0.3,"cm"))) + geom_text()
+
