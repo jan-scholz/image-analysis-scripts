@@ -4,6 +4,10 @@
 # jan.scholz@phenogenomics @ MICe, 2012-12-04
 #
 
+# TODO:
+#  - allow option to run on lsq6 input (might be better to do this step with the flat model, i.e. all brains)
+#    thus remove -lsq6 from mbm call if needed
+
 # flat registration
 # hierarchical registration on resampled/*-rigid.mnc
 # compare stats
@@ -64,21 +68,30 @@ model_command ()
 
 get_files ()
 {
-FILES=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$filename),'\n');"))
-SCANS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$scan),'\n');"))
-IDS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); cat(as.character(t\$id),'\n');"))
+FILES=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); t <- subset(t,!is.na(filename)); cat(as.character(t\$filename),'\n');"))
+SCANS=($(R --vanilla --slave -e "t <- read.csv('$TABLE',header=T); t <- subset(t,!is.na(filename)); cat(as.character(t\$scan),'\n');"))
+IDS=($(R --vanilla --slave -e   "t <- read.csv('$TABLE',header=T); t <- subset(t,!is.na(filename)); cat(as.character(t\$id),'\n');"))
 UNIQIDS=($(echo ${IDS[*]} | tr ' ' '\n' | sort | uniq))
 
 mkdir -p origs
 
 M=${#FILES[*]}
 for ((i=0;i<$M;i++)); do
+	echo ${FILES[$i]}
 	[ -f "${FILES[$i]}" ] || { echo "ERROR: could not find file: ${FILES[$i]}" > /dev/stderr; exit 1; }
 	RENAME=origs/${IDS[$i]}_${SCANS[$i]}.mnc
 	if [ -e "$RENAME" ]; then
 		echo "Warning: file/link already exists, overwriting: $RENAME"
 	fi
-	ln -sf $VERBOSE ../${FILES[$i]} $RENAME
+
+	# prefix '../' if relative path
+	if [ "${FILES[$i]:0:1}" = "/" ]; then
+		f=${FILES[$i]}
+	else
+		f=../${FILES[$i]}
+	fi
+	ln -sf $VERBOSE $f $RENAME
+
 	ORIGS="$ORIGS $RENAME"
 done
 ORIGS=($ORIGS)
@@ -166,7 +179,7 @@ JACSUFFIX=${1:-'-log-determinant-fwhm0.1.mnc'}
 [ ${#JACSUFFIX} -eq 3 ] && JACSUFFIX="-log-determinant-fwhm${1}.mnc"
 SUFFIX=hier
 PBASEHIER=$PWD/$SUFFIX
-RESAMPSCRIPT="${OUTBASE}_resample.sh"; > $RESAMPSCRIPT
+RESAMPSCRIPT="${OUTBASE}_hier-resamp.sh"; > $RESAMPSCRIPT
 PNAME=$DEFAULTPNAME
 ROOTSUFFIX=hier-root
 ROOTPBASE=$PWD/$ROOTSUFFIX
@@ -189,7 +202,7 @@ for ((i=0;i<$N;i++)); do
 
 	for g in $JACS; do
 		[ -f "$g" ] || { echo "ERROR: could not find jacobian: $g"; exit 1; }
-		echo -n "mincresample -clobber -2 -quiet $INTERP -transformation $XFMOUT -like $ROOTNLIN $g ${g/-log-determinant/-to-root-log-determinant}; " >> $RESAMPSCRIPT
+		echo -n "mincresample -clobber -2 -quiet $INTERP -transformation $XFMOUT -like $ROOTNLIN $g ${g/-log-determinant/-to-root-log-determinant}; " >> $RESAMPSCRIPT && chmod 755 $RESAMPSCRIPT
 	done
 
  	echo >> $RESAMPSCRIPT
@@ -204,6 +217,7 @@ done
 ###############################################################################
 # MAIN
 ###############################################################################
+echo "`basename $0` $@ # `date`" >> .`basename $0`.log
 
 while getopts o:fhrxX:v opt
 do
