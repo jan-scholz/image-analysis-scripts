@@ -16,7 +16,7 @@ usage ()
 	echo "Usage: `basename $0` [MINCPIKOPTIONS..] IMAGES.. [SLICEOPTIONS..]"
 	echo "  SLICEOPTIONS      more than one option and more than one slice number can be specified"
 	echo "                    if not specified 3 slices for each orientation will be created"
-	echo "     -axial    N.."
+	echo "     -axial    N..  (in % of total image dimension)"
 	echo "     -coronal  N.."
 	echo "     -sagittal N.."
 	echo
@@ -51,12 +51,19 @@ done
 IMAGES=
 while [ "${1: -4}" = ".mnc" ]; do
 	[ -f "$1" ] || { echo "ERROR: could not find image $1"; exit 1; }
+	mincinfo "$1" > /dev/null || exit 1
 	IMAGES="$IMAGES $1"; shift;
 done
 
 [ -z "$IMAGES" ] && { echo "ERROR: found no images"; exit 1; }
 
-[ "$#" -lt 1 ] && { eval "$0 $PIKOPTS $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
+#[ "$#" -lt 1 ] && { eval "$0 $PIKOPTS $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
+if echo $@ | egrep -v '\-(axial|coronal|sagittal)' > /dev/null; then
+	echo "using default slices:"
+	echo "$0 $PIKOPTS $IMAGES $@ -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70"
+	eval "$0 $PIKOPTS $IMAGES $@ -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70"
+	exit 0
+fi
 #[ "${!#}" = "-default" ] && { eval "$0 $IMAGES -coronal 30 50 70 -axial 30 50 70 -sagittal 30 50 70 -axial"; exit 0; }
 
 
@@ -79,7 +86,7 @@ for ARG in $@; do
 		while [ "$1" -le 100 -a "$1" -ge 0 ] 2> /dev/null; do
 			j=0
 			for g in $IMAGES; do
-				TMP=`basename ${g%.mnc}``printf "%04i" $j``printf "%04i.png" $i`
+				TMP=`basename ${g%.mnc}`_`printf "%04i" $j``printf "%04i.png" $i`
 
 				XLEN=`mincinfo -dimlength xspace $g`
 				YLEN=`mincinfo -dimlength yspace $g`
@@ -90,6 +97,7 @@ for ARG in $@; do
 					"-coronal")  N=$(($YLEN * $1 / 100)) ;;
 					"-sagittal") N=$(($XLEN * $1 / 100)) ;;
 				esac
+				#echo "mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP"
 				mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
 				let j++
 			done
@@ -102,9 +110,10 @@ done
 
 i=0
 for g in $IMAGES; do
-	TILES=`ls $OUTDIR/$(basename ${g%.mnc})$(printf "%04i" $i)*.png`
+	TILES="$OUTDIR/$(basename ${g%.mnc})_$(printf "%04i" $i)*.png"
 	if [ ! -z "$TILES" ]; then
 		OUTIM=`printf "image%04i" $i`.png 
+		#echo "montage -rotate $ROTATE -geometry +${BORDER}+${BORDER} -border 0 -background $BACKGROUND -tile `echo $TILES | wc -w`x1 $TILES $OUTDIR/$OUTIM"
 		montage -rotate $ROTATE -geometry +${BORDER}+${BORDER} -border 0 -background $BACKGROUND -tile `echo $TILES | wc -w`x1 $TILES $OUTDIR/$OUTIM
 		echo "<img src=\"$OUTIM\" title="$g" >`basename $g`<br>" >> $REPORT
 		rm $TILES
