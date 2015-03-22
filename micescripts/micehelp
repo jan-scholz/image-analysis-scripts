@@ -164,6 +164,7 @@ if __name__ == "__main__":
 #echo ". /projects/mice/share/arch/linux64/quarantine_toothless/environment"
 #echo
 #echo "/projects/mice/share/arch/linux64/quarantine_toothless/bin/MICe-build-model.pl -pipeline-base \$PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/ex-vivo/NRXN1a_version_1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy discorr/*.mnc"
+#MICe-build-model.pl -pipeline-base $PWD -pipeline-name hr -init-model /projects/mice/matthijs/binb-model-16-basket-july-2011/native -sge -sge-queue bigmem.q,all.q,diddl.q -lsq6 -lsq12 -nlin -nlin-registration-method mincANTS -nlin-stats -anatomical-atlas /projects/mice/share/mouse-brain-atlases/Dorr_2008_Steadman_2013_Ullmann_2013/ex-vivo/Dorr_2008_Steadman_2013_Ullmann_2013_on_NRXN1a_v1_average.mnc -classified-atlas /projects/mice/share/mouse-brain-atlases/Dorr_2008_Steadman_2013_Ullmann_2013/ex-vivo/Dorr_2008_Steadman_2013_Ullmann_2013_on_NRXN1a_v1_labels.mnc -resample-atlas -cleanup -no-registration-accuracy
 #echo "# -lsq12-max-pairs 0"
 #echo
 #echo "find . -regex '.*\(run\|fail\|lock\).*'"
@@ -201,3 +202,5 @@ cat rename.txt | parallel --colsep '\t' ln -sv {1} {2}
 
 # find /tmp/ -type f -mtime +2 -iname 'fsl_*' -exec rm -v {} \;
 
+
+# montage -geometry +0+0 -border 0 -tile 1x4 social0*.png all.png
