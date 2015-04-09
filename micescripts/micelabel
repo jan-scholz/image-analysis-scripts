@@ -12,6 +12,9 @@ usage ()
 	echo "  -d DEFS     definitions CSV file"
 	echo "  LABEL    one or several numbers or strings refering to label numbers or names"
 	echo "           (default: $DEFS)"
+	echo
+	echo "MORE LABELS"
+	echo "  /projects/mice/share/mouse-brain-atlases/Dorr_2008_Steadman_2013_Ullmann_2013/Dorr_2008_Steadman_2013_Ullmann_2013_mapping_of_labels.csv"
 }
 
 while getopts d:v opt
