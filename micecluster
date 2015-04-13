@@ -1,0 +1,110 @@
+#! /bin/bash
+# threshold statistical images
+#
+# TODO
+# make micecluster threshold cluster size
+# make micecluster output cluster size thresholded p/t map
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) [-s S-THRESH | -t T-THRESH] -m MASK INPUT"
+	echo "-s S-THRESH     significance threshold, assuming non-inverted stats"
+	echo "-t T-THRESH     t-threshold"
+	echo "-m MASK         mask input"
+	echo "INPUT           stats map"
+	echo
+	echo "-x VOX-THRESH   threshold clusters at specific number of voxels"
+	echo "-i              stats inverted (e.g. 1-p)"
+	echo "-j              output cluster index"
+	echo
+	echo "expects p/q values, the smalle the more significant"
+}
+
+
+while getopts s:t:m:o:x:ijv opt
+do
+	case "$opt" in
+		s)   STHRESH="$OPTARG";;
+		t)   TTHRESH="$OPTARG";;
+		m)      MASK="$OPTARG";;
+		o)   OUTBASE="$OPTARG";;
+		x) VOXTHRESH="$OPTARG";;
+		i)  INVERTED=1;;
+		j)    CINDEX=1;;
+		v)   VERBOSE=1;;
+		\?) usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+[ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
+
+INPUT=$1
+[ -z "$MASK" ] && { echo "ERROR: mask not specified"; exit 1; }
+[ -f "$INPUT" -a -f "$MASK" ] || { echo "ERROR: could not find INPUT or MASK files"; exit 1; }
+[ -z "$TTHRESH" -a -z "$STHRESH" ] && { echo "ERROR: no threshold specified"; exit 1; }
+[ -z "$TTHRESH" -o -z "$STHRESH" ] || { echo "ERROR: specify only one threshold"; exit 1; }
+
+THRESH="${TTHRESH}${STHRESH}"
+[ -z "$OUTBASE" ] && OUTBASE=`basename $(imglob $INPUT)`
+OUTNAME=clusters_${OUTBASE}_thr${THRESH}
+
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
+trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
+
+
+miceconvert $INPUT $TDIR/input
+miceconvert $MASK $TDIR/mask
+fslmaths $TDIR/mask -bin $TDIR/mask
+
+fslmaths $TDIR/input -abs $TDIR/input_abs
+
+if [ ! -z "$STHRESH" ]; then
+	echo using significance threshold $STHRESH
+	# invert because cluster's -t threshold is a lower threshold
+	if [ -z "$INVERTED" ]; then
+		echo "Warning: inverting" > /dev/stderr
+		fslmaths $TDIR/input_abs -mul -1 -add 1 -mul $TDIR/mask $TDIR/input_abs
+	fi
+	THRESH=`python -c "print 1.0 - $THRESH"`
+else
+	echo using t-threshold $TTHRESH
+fi
+
+
+[ -z "$CINDEX" ] || OINDEX="--oindex=$TDIR/masked_index"
+
+cluster --mm -i $TDIR/input_abs -t $THRESH $OINDEX --osize=$TDIR/masked_size > $TDIR/${OUTNAME}.mm.txt
+cluster      -i $TDIR/input_abs -t $THRESH $OINDEX --osize=$TDIR/masked_size > $TDIR/${OUTNAME}.vox.txt
+
+# yield these columns: Cluster_Index Voxels COG-X.mm COG-Y.mm COG-Z.mm
+cat $TDIR/${OUTNAME}.mm.txt | sed -e 's/Cluster Index/Cluster_Index/' -e 's/Z-\(...\) \(.\)/\1-\2/g' -e 's/ (\([^)]*\))/.\1/g' | awk '{print $1,$2,$7,$8,$9}' > ${OUTNAME}.mm.txt
+cat $TDIR/${OUTNAME}.vox.txt | sed -e 's/Cluster Index/Cluster_Index/' -e 's/Z-\(...\) \(.\)/\1-\2/g' -e 's/ (\([^)]*\))/.\1/g' | awk '{print $1,$2,$7,$8,$9}' > ${OUTNAME}.vox.txt
+
+miceconvert $TDIR/masked_size.nii.gz  ${OUTNAME}.mnc
+[ -f "$TDIR/masked_index.nii.gz" ] && miceconvert $TDIR/masked_index.nii.gz  ${OUTNAME}_index.mnc
+
+
+# create cluster-size thresholded table and size minc file
+if [ ! -z "$VOXTHRESH" ]; then
+	head -n1 ${OUTNAME}.mm.txt > ${OUTNAME}.mm.gt${VOXTHRESH}.txt
+	tail -n+2 ${OUTNAME}.mm.txt | while read LINE; do
+		LINE=($LINE)
+		[ ${LINE[1]} -lt $VOXTHRESH ] && break
+		echo ${LINE[@]}
+	done >> ${OUTNAME}.mm.gt${VOXTHRESH}.txt
+
+	fslmaths $TDIR/masked_size -thr $VOXTHRESH $TDIR/masked_size_thr
+	fslmaths $TDIR/input -mas $TDIR/masked_size_thr $TDIR/input_thr
+	miceconvert $TDIR/input_thr.nii.gz  ${OUTNAME}.gt${VOXTHRESH}.mnc
+fi
+
+
+#echo $TDIR; read
+rm -rf $TDIR
+exit 0
+
+
