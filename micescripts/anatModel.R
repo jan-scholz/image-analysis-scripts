@@ -1,4 +1,4 @@
-anatModel <- function(data,formula,atlas,anova=F,combined=F,relative=F,adjust='fdr') {
+anatModel <- function(data, formula, atlas, anova=F, combined=F, relative=F, adjust='fdr', method='jacobians', defs="/projects/mice/jlerch/cortex-label/c57_brain_atlas_labels.csv") {
 	# anatModel() retrieves volumes for each atlas label and returns the p-value
 	#             for the model specified by the formula
 	#
@@ -14,7 +14,9 @@ anatModel <- function(data,formula,atlas,anova=F,combined=F,relative=F,adjust='f
 	#
 	# value         returns array of p-values
 
-	method = "jacobians"
+	#method = "jacobians"
+	# /projects/mice/share/mouse-brain-atlases/Dorr_2008_Steadman_2013_Ullmann_2013/Dorr_2008_Steadman_2013_Ullmann_2013_mapping_of_labels.csv
+
 
 	library(RMINC)
 	library(reshape)
@@ -24,9 +26,9 @@ anatModel <- function(data,formula,atlas,anova=F,combined=F,relative=F,adjust='f
 	}
 
 	# get volume data
-	vols <- anatGetAll(data$filename, atlas=atlas, method=method)
+	vols <- anatGetAll(data$filename, atlas=atlas, method=method, defs=defs)
 	if (combined) {
-		vols <- anatCombineStructures(vols, method=method)
+		vols <- anatCombineStructures(vols, method=method, defs=defs)
 	}
 
 	if (relative) {
@@ -41,6 +43,7 @@ anatModel <- function(data,formula,atlas,anova=F,combined=F,relative=F,adjust='f
 	labelnames <- levels(data$variable)
 	data$hemisphere <- sapply(data$variable, function(x) if (grepl('^left',x)) 'left' else if (grepl('^right',x)) 'right' else 'combined')
 	data$structure <-  sapply(data$variable,  function(x) gsub('^(left|right) ','',x))
+	data$lr_structure <- data$variable
 	data$variable <- NULL
 
 	# correct formula if wrong left side
@@ -48,19 +51,19 @@ anatModel <- function(data,formula,atlas,anova=F,combined=F,relative=F,adjust='f
 
 	# initalize output array
 	if (anova) {
-		effectnames <- rownames(anova(lm(formula, data=subset(data, structure==labelnames[1]))))
+		effectnames <- rownames(anova(lm(formula, data=subset(data, lr_structure==labelnames[1]))))
 	} else {
-		effectnames <- names(coef(lm(formula, data=subset(data, structure==labelnames[1]))))
+		effectnames <- names(coef(lm(formula, data=subset(data, lr_structure==labelnames[1]))))
 	}
 	p <- array(NA, dim=c(ncol(vols), length(effectnames)), dimnames=list(labelnames,effectnames))
 
 	# populate array with p values
 	for (s in rownames(p)) {
 		if (anova) {
-			p[s,] <- anova(lm(formula, data=subset(data,structure==s)))$`Pr(>F)`
+			p[s,] <- anova(lm(formula, data=subset(data,lr_structure==s)))$`Pr(>F)`
 		} else {
 			#c[s] <- coef(lm(formula, data=subset(data,structure==s)))
-			p[s,] <- coef(summary(lm(formula, data=subset(data,structure==s))))[,'Pr(>|t|)']
+			p[s,] <- coef(summary(lm(formula, data=subset(data,lr_structure==s))))[,'Pr(>|t|)']
 		}
 	}
 
