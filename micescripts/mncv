@@ -6,11 +6,14 @@ usage ()
 {
 	echo "Usage: $(basename $0) IMAGE.."
 	echo "  IMAGE            one or several images MINC or NIFTI"
+	echo
+	echo " -a FSLARG         append following argument to all images, e.g. \"-l Red-Yellow\""
+	echo " -v                verbose mode"
 }
 
 cond_convert ()
 {
-	mincinfo $1 > /dev/null 2> /dev/null && { [ -z "$VERBOSE" ] || echo "converting $1"; miceconvert $1 $2 &> /dev/null; return; }
+	mincinfo $1 > /dev/null 2> /dev/null && { [ -z "$VERBOSE" ] || echo "converting $1"; miceconvert $VERBOSE $1 $2 &> /dev/null; return; }
 	fslinfo  $1 > /dev/null && {       imcp $1 $2;              return; }
 	echo "ERROR: could not open file: $1"; exit 1
 }
@@ -22,9 +25,10 @@ cond_convert ()
 ###############################################################################
 
 
-while getopts v opt
+while getopts a:v opt
 do
     case "$opt" in
+      a)    GLOBALARG="${OPTARG}";;
       v)    VERBOSE="-v";;
       \?)  usage; exit 1;;
     esac
@@ -38,18 +42,19 @@ shift `expr $OPTIND - 1`
 which miceconvert > /dev/null || { echo "ERROR: could not find miceconvert"; exit 1; }
 
 
-TDIR=$TMPDIR/$$; mkdir -p $TDIR
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
 trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
 
 i=0
 for a in $@; do
 	if [ "${a##*.}" = "mnc" ]; then
 		g=$TDIR/`printf "%03i_%s" $i $(basename $a .mnc)`
 		cond_convert $a $g
-		ARGS="$ARGS $g"
+		ARGS="$ARGS $g $GLOBALARG"
 		let i++
 	else
-		ARGS="$ARGS $a"
+		ARGS="$ARGS $a $GLOBALARG"
 	fi
 done
 		
