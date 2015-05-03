@@ -10,9 +10,13 @@ group         <- 'condition'
 ROPEm         <- 0.01
 ROPEeff       <- 0.1
 
-numSavedSteps <- 1e3  #1e5
+numSavedSteps <- 1e4  #1e5
 thinSteps     <- 1
 burnInSteps   <- 1e3  #1e3
+
+nsdf          <- 5
+
+warning(sprintf('ROPEm: %g, ROPEeff: %g, numSavedSteps: %g, thinSteps: %g, burnInSteps: %g, nsdf: %g',ROPEm,ROPEeff,numSavedSteps,thinSteps,burnInSteps,nsdf))
 
 y1 <- x[as.numeric(d[, group])==1]
 y2 <- x[as.numeric(d[, group])==2]
@@ -60,9 +64,84 @@ c( out["mu1.mean"]            <- sout["mu1","mean"],
    out["muDiff.%InROPE"]      <- sout["muDiff","%InROPE"],
    out["effSz.%InROPE"]       <- sout["effSz","%InROPE"] )
 
+
+#plotAreaInROPE(BESTout, credMass = 0.95, compVal = 0,  maxROPEradius = 0.15, plot=T)
+
+
+#plot(gas,pressure)
+#model.1 <- nls(pressure ~ SSlogis(gas, ASym, xmid, scal))
+#coef.sig<-coef(summary(model.1))[,1]
+#est.p<-coef.sig[1]/(1+exp((coef.sig[2]-gas)/coef.sig[3]))
+#points(gas,est.p,col=2)
+
+
+# muDiff
+RmuDiff <- plotAreaInROPE(bout$mu1 - bout$mu2,
+              credMass = 0.95, compVal = 0,  maxROPEradius = ROPEm*10, plot=F)  # 10 % change
+
+# effSz
+ReffSz <- plotAreaInROPE((bout$mu1 - bout$mu2)/sqrt((bout$sigma1^2 + bout$sigma2^2) / 2),
+              credMass = 0.95, compVal = 0,  maxROPEradius = ROPEeff*10, plot=F)  # 1 SD
+
+lmuDiff <- lm(RmuDiff$y ~ ns(RmuDiff$x,nsdf))
+out['muDiffRes'] <- sum(lmuDiff$residuals^2)
+
+leffSz <- lm(ReffSz$y ~ ns(ReffSz$x,nsdf))
+out['effSzRes'] <- sum(leffSz$residuals^2)
+
+for (i in 0:nsdf) {
+	out[sprintf('muDiffNs%i',i)] <- lmuDiff$coefficients[i+1]
+	out[sprintf('effSzNs%i',i)] <- leffSz$coefficients[i+1]
+}
+
 return(out)
 }
 
+
+###############################################################################
+
+getROPEcurve <- function(x, data=NULL, rope=c(0,0.15), nsdf=5) {
+
+	#if (!is.null(data)) d <- data
+	#if (!('order' %in% names(d))) stop('column \"order\" not found')
+	#if (!('filename' %in% names(d))) stop('column \"filename\" not found')
+	#x <- x[order(d$order),]  # re-order x according to "order" column in "d"
+
+	if (length(x) != nsdf+1) stop('degrees of freedom do not match')
+	fakelength <- 201
+
+	dfake <- data.frame(xx=seq(rope[1],rope[2],length=fakelength), yy=rep(0,fakelength))
+	lfake <- lm(yy ~ ns(xx,nsdf), data=dfake)
+
+	lfake$coefficients <- x
+	p <- predict(lfake, dfake)
+
+	# cannot return 201 elements. allocMatrix: too many elements
+	result <- mean(p)
+
+	return(result)
+}
+
+
+###############################################################################
+# paste <(ls muDiffNs*.mnc) <(ls effSzNs*.mnc)
+
+ROPEcurve_from_files <- function(filenames, mask="tinyHipMask.mnc", cpus=2, cores=2) {
+
+	export_filenames <- filenames
+
+	library(snowfall)
+	sfInit(parallel=TRUE, cpus=cpus)
+	for (l in c("RMINC","splines")) sfLibrary(l, character=T)
+	#sfExport('d', 'getROPEcurve')
+	sfExport('export_filenames','getROPEcurve')
+
+	cat('starting pMincApply','\n')
+	o <- pMincApply(filenames, quote(getROPEcurve(x)), mask=mask, cores=cores)
+	cat('finishing pMincApply','\n')
+
+	sfStop()
+}
 
 
 #leveneTestForRMINC <- function(x) {
