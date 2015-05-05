@@ -50,7 +50,7 @@ if [ ! -z "$PARALLEL" ]; then
 	echo parallel
 	for s in $SUFF; do
 		#FILES="$FILES $OUTBASE/*${s}"
-		echo "mincmath -clobber -add $OUTBASE/*${s} $OUTBASE/${OUTBASE}${s}"
+		echo "mincmath -clobber -add $OUTBASE/*\"${s}\" $OUTBASE/${OUTBASE}\"${s}\""
 	done | parallel -u $VERBOSE $PARALLEL
 	echo "archive not possible in parallel mode"
 else
