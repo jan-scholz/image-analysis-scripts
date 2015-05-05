@@ -1,0 +1,49 @@
+#!/bin/bash
+#
+# create lowres versions of images, downsample
+# 2014-06-16
+CLOBBER="-clobber"
+
+usage ()
+{
+	echo "Usage: $(basename $0) FILE.."
+	echo " -n \"FILE..\"    use nearest neighbour resampling for these images"
+	echo " -s STEPSIZE    resample to STEPSIZE in mm, e.g. 0.1"
+}
+
+
+print_autocrop ()
+{
+	for f in $@; do
+		echo "`autocrop $ARGS -isostep $STEPSIZE $f ${f%%.mnc}${SUFFIX}.mnc| cut -d' ' -f5-` $FINALARGS"
+	done
+}
+
+
+[ $# -lt 1 ] && { usage; exit 1; }
+
+while getopts n:s:cv opt
+do
+	case "$opt" in
+		n)  NNFILES="$OPTARG";;
+		s)  STEPSIZE="$OPTARG";;
+		c)  CLOBBER="-noclobber";;
+		v)  VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+[ -z "$STEPSIZE" ] && { echo "ERROR: STEPSIZE not specified"; exit 1; }
+
+ARGS="-noexecute $CLOBBER"
+SUFFIX=_step${STEPSIZE}
+
+# run autocrop for FILES
+print_autocrop $@
+
+# run autocrop using nearest neighbour interpolation
+FINALARGS="-nearest_neighbour"
+print_autocrop $NNFILES
+
+
