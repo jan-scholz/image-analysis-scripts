@@ -19,7 +19,7 @@ anatModel <- function(data, formula, atlas, anova=F, combined=F, relative=F, adj
 
 
 	library(RMINC)
-	library(reshape)
+	library(reshape2)
 
 	if ( ! 'filename' %in% colnames(data) ) {
 		stop('data does not contain column \'filename\'')
