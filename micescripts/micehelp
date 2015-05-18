@@ -204,3 +204,6 @@ cat rename.txt | parallel --colsep '\t' ln -sv {1} {2}
 
 
 # montage -geometry +0+0 -border 0 -tile 1x4 social0*.png all.png
+
+# /projects/mice/jbishop/bin/vrecon -shiftppe2 -pmod -vmap fse_720_360_6_3 -croplpe fid wol
+
