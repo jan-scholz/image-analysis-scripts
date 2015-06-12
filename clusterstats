@@ -1,0 +1,77 @@
+
+INPUT=../lm_std_vs_maze_scaled_0.5_tvalue-conditionMaze_p.mnc
+TDIR=/tmp
+
+
+THRESH=0.05
+
+# clusters
+mincmorph -clobber -successive "B[0:${THRESH}]G" $INPUT  $TDIR/group2.mnc
+
+# max number of clusters
+NCLUSTERS=`mincstats -quiet -max $TDIR/group.mnc`
+minc_label_ops --convert $TDIR/group2.mnc $TDIR/group.mnc
+
+# voxel count
+for i in `seq $NCLUSTERS`; do
+STATS=(`mincstats -quiet -count -com -mask $TDIR/group.mnc -mask_binvalue $i $TDIR/group.mnc`)
+NVOXEL=${STATS[0]}
+COM="${STATS[4]} ${STATS[5]} ${STATS[6]}"    # world coordinates
+#COM="${STATS[1]} ${STATS[2]} ${STATS[3]}"    # voxel coordinates
+#echo $i, $NVOXEL, $COM
+echo $i $NVOXEL $COM
+done > $TDIR/stats.txt
+
+
+MAPPING=`awk '{print $1,$2}' $TDIR/stats.txt | tr ' \n' ':,' | sed -e 's/,$//'`
+minc_label_ops --remap=$MAPPING $TDIR/group.mnc $TDIR/size.mnc
+
+#MAPPING=`awk '{print $1,$3}' $TDIR/stats.txt | tr ' \n' ':,' | sed -e 's/,$//'`
+#minc_label_ops --remap=$MAPPING $TDIR/group.mnc $TDIR/posx.mnc
+#
+#MAPPING=`awk '{print $1,$4}' $TDIR/stats.txt | tr ' \n' ':,' | sed -e 's/,$//'`
+#minc_label_ops --remap=$MAPPING $TDIR/group.mnc $TDIR/posy.mnc
+#
+#MAPPING=`awk '{print $1,$5}' $TDIR/stats.txt | tr ' \n' ':,' | sed -e 's/,$//'`
+#minc_label_ops --remap=$MAPPING $TDIR/group.mnc $TDIR/posz.mnc
+
+
+# do this for x, y, and z
+EXPR="r=A[0];"
+EXPR="$EXPR`awk '{print $1,$3}' $TDIR/stats.txt | while read LINE; do
+LINE=($LINE)
+printf 'r=A[0]==%i?%g:r;' ${LINE[0]} ${LINE[1]}
+done`"
+
+minccalc -clobber -float  -expression $EXPR /tmp/group.mnc foo.mnc
+
+# see bayesian spatial cluster paper
+#  the following is not the right approach
+#  need to model 'generating' clusters
+#
+# threshold/ cluster like above
+# downsample volumes
+#   micelr
+# read size, and com volumes into r
+# create data.frame
+# for each volume only retain masked voxels
+# mincGetVolume(Sys.glob(permutationswithinenriched))
+# v[m>0.5]
+#   #mincGetVoxel(filenames, c(z,y,x))
+#
+# run jags
+#   - estimate distribution of participating cluster size and com coords
+#   - output size and com samples
+#   - size zero inflated?
+#   - remove zero-sizes from position sampling
+
+# for each voxel sample clusters that fit coords and size best (or apply scale and shift?)
+
+# threshold and binarize p value images
+#for f in lm_std_vs_maze_scaled_0.2_00[0-3]*_tvalue-conditionMaze_p.mnc; do mincmorph -clobber -successive B[0:0.005] $f ${f/_p.mnc/_p_thr0.005.mnc}; done
+#mincaverage -clobber lm_std_vs_maze_scaled_0.2_*_tvalue-conditionMaze_p_thr0.005.mnc foo.mnc
+#mncv ../template.mnc foo.mnc -l Blue-Lightblue ../lm_std_vs_maze_scaled_0.2_tvalue-conditionMaze_p.mnc -l Red-Yellow
+#
+# test for zero inflation
+# http://www.ats.ucla.edu/stat/r/dae/zipoisson.htm
+
