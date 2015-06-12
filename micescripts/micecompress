@@ -1,11 +1,14 @@
 #! /bin/bash
 # compress minc files in place
+# 
+# TODO
+#  - compress inplace then move for better performance
 
 RATIO=4
 
 usage ()
 {
-	echo "Usage: $(basename $0) [-c RATIO] MINCFILE.."
+	echo "Usage: $(basename $0) [-c RATIO] MINCFILE..."
 	echo "  -c RATIO      compression ratio, from 0 (disabled) to 9, default $RATIO"
 }
 
@@ -30,6 +33,7 @@ trap "{ rm -rf $TDIR; exit 255; }" SIGINT SIGTERM
 
 
 for f in $@; do
+	echo "$f"
 	[ -f "$f" ] || { echo "ERROR: could not find file: $f" > /dev/stderr; continue; }
 	ORIGSIZE=`stat -c%s $f`
 	mincconvert -2 -clobber -compress $RATIO $f $TDIR/`basename $f` && cp $TDIR/`basename $f` $f && [ -z "$VERBOSE" ] || printf "compressed \"%s\" with ratio %d to %0.2f%% of original size\n" $f $RATIO `echo "scale=2; $(stat -c%s $f) * 100 / $ORIGSIZE " | bc -l`
