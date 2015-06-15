@@ -30,6 +30,7 @@ def getTable(tablefilename, delimiter = ",", verbose=False):
     table = list()
     for i,r in enumerate(tmp[1:]):
         table.append(dict(zip(tmp[0],r[coldiff:])))
+    if verbose: print 'using table %s' % (tablefilename,len(tablefilename)) 
     return table
 
 def label_to_structure(value, table, verbose=False):
