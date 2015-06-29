@@ -43,6 +43,7 @@ trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SI
 
 
 for f in $FILES; do
+	[ -f "$f" ] || echo "ERROR: file not found";
 	[ `echo "$(mincinfo -attvalue time:length ${f}) <= $END" | bc -l` -ne 0 ] && { echo "ERROR: not enough volumes in file: $f"; exit 1; } 
 	OUT=`basename ${f%.mnc}`${SUFFIX}.mnc
 	[ -z "$VERBOSE" ] || printf "averaging volumes %g to %g of file %s\n" $START $END $f
