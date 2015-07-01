@@ -16,13 +16,15 @@ usage ()
 {
 	echo "Usage: $(basename $0) MINCFILE.."
 	echo "Prints filename and coil number if present in header"
+	echo "  -o          only output coil number"
 	echo "  -w WIDTH    zero-pad output (default: 1)"
 }
 
 
-while getopts w: opt
+while getopts ow: opt
 do
     case "$opt" in
+      o)   ONLY=1;;
       w)   WIDTH="${OPTARG}";;
       \?)  usage; exit 1;;
     esac
@@ -37,6 +39,11 @@ WIDTH=${WIDTH:-1}
 for f in $@; do
 	mincheader $f | grep vnmr:coil > /dev/null || { echo "ERROR: could not open or find attribute vnmr:coil in file: $f"; exit 1; }
 	COIL=`mincinfo -attvalue vnmr:coil $f`
-	printf "%s %0${WIDTH}g\n" $f $COIL
+	CSTRING=`printf "%0${WIDTH}g" $COIL`
+	if [ "$ONLY" = 1 ]; then
+		printf "%s\n" $CSTRING
+	else
+		printf "%s %s\n" $f $CSTRING
+	fi
 done
 
