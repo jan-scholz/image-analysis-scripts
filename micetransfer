@@ -17,6 +17,13 @@ usage ()
 }
 
 
+find_referent ()
+{
+
+echo
+}
+
+
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 [ $# -lt 2 ] && { usage; exit 1; }
 
@@ -41,8 +48,10 @@ mkdir -p $REGDIR/{input,resources} || { echo "ERROR: couldn't create REGDIR: $RE
 
 [ -z "$VERBOSE" ] || echo "copying files to $REGDIR/input"
 for f in $@; do
-	[ -e "$f" ] || { echo "ERROR: file does not exist: $f"; exit 1; }
-	ln $VERBOSE -sf `readlink -e $f` $REGDIR/input/
+	#ln $VERBOSE -sf `readlink -e $f` $REGDIR/input/
+	s=`readlink -e $f`                                                            # find finale referer
+	[ -f "$s" ] || { echo "ERROR: file does not exist: $f -> $s"; exit 1; }
+	(cd $REGDIR/input/; ln $VERBOSE -sf $s `basename $f`;)
 done
 
 ###############################################################################
