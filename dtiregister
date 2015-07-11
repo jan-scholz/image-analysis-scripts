@@ -1,0 +1,222 @@
+#! /bin/bash
+#
+# cd /axiom2/projects/jscholz/meaney/reg_dti
+# jscholz@diddl:$ dtiregister -r /home/j/jlerch/jscholz/scratch/meaney -o reg_dti_flip -i images_dti -m _b0 -a _FA -s 1
+
+
+FLIP=/micehome/jscholz/resources/registration/transformations/flip.xfm
+DCSUFFIX=.sept2014_dist_corr.mnc
+MODSUFFIX=_FA
+
+
+usage ()
+{
+	echo "Usage: $(basename $0) -r REMOTEDIR -o OUTBASE -i INPUTDIR -m MOD -a APPLYMOD -s 1"
+	echo "          if the input filename for the inital registration is FILE_b0"
+	echo "          it needs to be FILE_FA for the following steps"
+	echo
+	echo
+	echo EXAMPLE
+	echo "dtiregister -r /home/j/jlerch/jscholz/scratch/project -o reg_dti_flip -i dc -m _b0 -a _FA"
+	echo
+}
+
+
+while getopts r:o:i:m:a:s:v opt
+do
+	case "$opt" in
+		r)  REMOTEDIR="$OPTARG";;
+		o)    OUTBASE="$OPTARG";;
+		i)   INPUTDIR="$OPTARG";;
+		m)        MOD="$OPTARG";;
+		a)   APPLYMOD="$OPTARG";;
+		s)      STAGE="$OPTARG";;
+		v)    VERBOSE=1;;
+		\?)  usage; exit 1;;
+	esac
+done
+shift $(expr $OPTIND - 1)
+
+[ -d "$INPUTDIR" ] || { echo "ERROR: input directory not specified or does not exist"; exit 1; }
+IMGS=`echo $INPUTDIR/*${MOD}.mnc`
+[ `echo $IMGS | wc -w` -lt 2 ] && { usage; echo "ERROR: need at least 2 input images"; exit 1; }
+
+[ -f "$FLIP" ] || { echo "ERROR: could not find flip transformation: $FLIP"; exit 1; }
+
+
+stage1 ()
+{
+
+OUTDIR=${OUTBASE}${MOD}
+
+# register b0s only to lsq6
+
+echo "register b0s rigidly (lsq6)"
+echo
+echo "micetransfer -v -c ~/resources/registration/scinet/basket_lsq6.cfg -r scinet:$REMOTEDIR -o $OUTDIR $IMGS"
+echo
+echo
+echo "transfer files to scinet"
+echo
+echo "./$OUTDIR/trans2remote.sh"
+echo
+echo
+echo "then ssh scinet and run"
+echo
+echo "cd $REMOTEDIR/$OUTDIR; ./setup_dispatcher.sh"
+echo
+echo
+
+}
+
+
+stage2 ()
+{
+
+# (2) create lsq6 input directories including flipped brains from lsq6 only pipeline
+# apply only the concat transformation: *_concat.xfm 
+# requires images_$MOD native input directory
+
+OUTDIR=${OUTBASE}${MOD}
+
+LSQ6DIR=${INPUTDIR}_lsq6
+mkdir -p $LSQ6DIR
+LSQ6SCRIPT=create_lsq6_input_dir-${OUTBASE}${MOD}.sh
+
+for d in $OUTDIR/*_processed/*; do
+	g=`basename $d`
+	h=$INPUTDIR/${g/${MOD}/${APPLYMOD}}
+	LIKE=$d/resampled/${g}-lsq6.mnc
+	echo "mincresample -clobber -sinc -2 -like $LIKE -transform $d/transforms/${g}_concat.xfm ${h}.mnc $LSQ6DIR/`basename $h`.mnc; [ -f \"$d/transforms/${g}_concat+flip.xfm\" ] || xfmconcat -clobber $d/transforms/${g}_concat.xfm $FLIP $d/transforms/${g}_concat+flip.xfm; mincresample -clobber -sinc -2 -like $LIKE -transform $d/transforms/${g}_concat+flip.xfm ${h}.mnc $LSQ6DIR/`basename $h`_flip.mnc; "
+done > $LSQ6SCRIPT
+chmod 755 $LSQ6SCRIPT
+
+
+echo "run after registration is finished"
+echo "./$LSQ6SCRIPT"
+echo
+echo
+
+
+OUTDIR=${OUTBASE}${APPLYMOD}
+IMGS=`echo $LSQ6DIR/*${APPLYMOD}{,_flip}.mnc`
+
+echo "micetransfer -v -c ~/resources/registration/scinet/basket_default-no-lsq6.cfg -r scinet:$REMOTEDIR -o $OUTDIR $IMGS"
+echo
+echo
+echo "transfer files to scinet"
+echo
+echo "./$OUTDIR/trans2remote.sh"
+echo
+echo
+echo "then ssh scinet and run"
+echo
+echo "cd $REMOTEDIR/$OUTDIR; ./setup_dispatcher.sh"
+
+}
+
+
+
+stage3 ()
+{
+
+# (3) create average with original modality for atlas registration
+echo stage 3
+
+#OUTDIR=${OUTBASE}${MOD}
+#LSQ6DIR=${INPUTDIR}_lsq6
+#mkdir -p $LSQ6DIR
+
+ORIGDIR=${OUTBASE}${MOD}
+APPLYDIR=${OUTBASE}${APPLYMOD}
+NLINSCRIPT=apply_nlin_transform-${OUTBASE}${MOD}${APPLYMOD}.sh
+
+ALL=
+echo "$APPLYDIR/*_processed/*[^p]"
+for d in $APPLYDIR/*_processed/*[^p]; do
+	s=`basename ${d} ${APPLYMOD}`  # subject
+	ABASE=${s}${APPLYMOD}
+	OBASE=${s}${MOD}
+
+	h=$INPUTDIR/${OBASE}  # original stage 1 input file
+	LIKE=$d/resampled/${ABASE}-resampled-final-nlin.mnc
+	LSQ6=${d//${APPLYMOD}/${MOD}}/transforms/${OBASE}_concat.xfm
+	LSQ12=$d/transforms/${ABASE}-avg-lsq12.xfm
+	NLIN=$d/transforms/${ABASE}-final-nlin.xfm
+	NLINCAT=$d/transforms/${ABASE}-dc-to-final-nlin.xfm
+	OUT=$d/resampled/${OBASE}-resampled-final-nlin.mnc
+
+	echo "[ -f $NLINCAT ] || xfmconcat $LSQ6 $LSQ12 $NLIN $NLINCAT; [ -f $OUT ] || mincresample -clobber -sinc -2 -like $LIKE -transform $NLINCAT ${h}.mnc $OUT; "
+
+	ALL="$ALL $OUT"
+done > $NLINSCRIPT
+chmod 755 $NLINSCRIPT
+
+
+echo "run after registration is finished to align $MOD to $APPLYMOD files"
+echo "./$NLINSCRIPT"
+echo
+echo
+
+
+
+
+AVERAGESCRIPT=create_nlin_average_${OUTBASE}${MOD}${APPLYMOD}.sh
+echo "mincaverage -clobber -normalize -max_buffer_size_in_kb 409620 $ALL $APPLYDIR/*_nlin/nlin${MOD}.mnc" > $AVERAGESCRIPT
+chmod 755 $AVERAGESCRIPT
+
+
+echo "run after transformatino are finished (./$NLINSCRIPT)"
+echo "./$AVERAGESCRIPT"
+echo
+echo
+
+
+
+
+# get minchistory on nlin average and substitute modality suffix
+# rerun atlas resample
+#mincresample -2 -clobber -tricubic -like \
+#     /scratch/j/jlerch/jscholz/meaney/reg_dti_flip_FA/basket_nlin/nlin-2.mnc \
+#     -transform \
+#     /scratch/j/jlerch/jscholz/meaney/reg_dti_flip_FA/basket_processed/SD9_FA_flip/transforms/SD9_FA_flip-final-nlin.xfm \
+#     /scratch/j/jlerch/jscholz/meaney/reg_dti_flip_FA/basket_processed/SD9_FA_flip/resampled/SD9_FA_flip-resampled-lsq12.mnc \
+#     /scratch/j/jlerch/jscholz/meaney/reg_dti_flip_FA/basket_processed/SD9_FA_flip/resampled/SD9_FA_flip-resampled-final-nlin.mnc
+
+
+}
+
+
+
+
+###############################################################################
+# MAIN
+###############################################################################
+
+case "$STAGE" in
+	1) stage1;;
+	2) stage2;;
+	3) stage3;;
+	\?)  usage; exit 1;;
+esac
+
+
+
+exit 0
+
+
+
+
+
+# outlier? histogram shows abudance of low FA voxels
+# rot33_corr_S0-resampled-lsq12.mnc
+
+####################
+# apply nlin trans to lsq6 images (then blur, link, extract mean, see below)
+# after registration generate nonlinear b0 template for atlas registration
+#for d in b0-fa+flip_processed/*; do
+#g=`basename $d`
+#echo "xfmconcat -clobber $d/transforms/${g}-avg-lsq12.xfm ${d}/transforms/${g}-final-nlin.xfm $d/transforms/${g}_avg-lsq12+final-nlin.xfm; mv -i $d/resampled/${g}-resampled-final-nlin.mnc $d/resampled/${g/S0/FA}-resampled-final-nlin.mnc && mincresample -2 -clobber -like $ATLASLARGE -transformation $d/transforms/${g}_avg-lsq12+final-nlin.xfm ../lsq6_images_S0/${g}.mnc $d/resampled/${g}-resampled-final-nlin.mnc;"
+#done
+#
+
