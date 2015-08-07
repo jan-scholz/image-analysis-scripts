@@ -17,6 +17,27 @@ usage ()
 	echo "  NII2MNCARGS        nii2mnc options, e.g. -unsigned -short"
 }
 
+colorize(){
+    GREEN="\033[0;32m"
+    CYAN="\033[0;36m"
+    GRAY="\e[1;30m"
+    GREY="\e[1;30m"
+    #GREY="\033[0;37m"
+    BLUE="\033[0;34m"
+    YELLOW="\033[0;33m"
+    NORMAL="\033[m"
+    color=\$${1:-NORMAL}
+    # activate color passed as argument
+    echo -ne "`eval echo ${color}`"
+    # read stdin (pipe) and print from it:
+    cat
+    # Note: if instead of reading from the pipe, you wanted to print
+    # the additional parameters of the function, you could do:
+    # shift; echo $*
+    # back to normal (no color)
+    echo -ne "${NORMAL}"
+}
+
 
 ###############################################################################
 # MAIN                                                                        #
@@ -33,6 +54,13 @@ usage ()
 VERBOSE=
 
 [ $# -lt 2 ] && { usage; exit 1; }
+
+if [ "$1" = "-c" ]; then
+	COLOR=GRAY
+	shift
+else
+	COLOR=NORMAL
+fi
 
 NII2MNCARGS="${@:1:$((${#}-2))}"
 INPUT="${@: -2:1}"
@@ -56,7 +84,7 @@ if [ NIFTI = "${FILETYPE:0:5}" ]; then
 	OUTPUT=${OUTPUT%.mnc}.mnc
 
 	fslchfiletype NIFTI $INPUT $TDIR/nii
-	nii2mnc $TDIR/nii.nii $TDIR/minc.mnc 2> /dev/null
+	nii2mnc $TDIR/nii.nii $TDIR/minc.mnc 2> /dev/null | colorize $COLOR
 	[ -z "$NII2MNCARGS" ] || { mv $TDIR/minc.mnc $TDIR/minc2.mnc; mincreshape -clobber $NII2MNCARGS $TDIR/minc2.mnc $TDIR/minc.mnc; }
 
 	[ -f $TDIR/minc.mnc ] || { echo "ERROR: conversion did not work" >/dev/stderr; exit 1; }
@@ -84,7 +112,7 @@ elif [ MINC = "${FILETYPE:0:4}" ]; then
 
 	mincresample -2 -quiet -clobber  -keep_real_range -float $INPUT $TDIR/FLOAT.mnc
 
-	mnc2nii $TDIR/FLOAT.mnc $TDIR/nii.nii 2> /dev/null
+	mnc2nii $TDIR/FLOAT.mnc $TDIR/nii.nii 2> /dev/null | colorize $COLOR
 	fslchfiletype NIFTI_GZ $TDIR/nii.nii || rm $TDIR/nii.nii
 	rm -f $TDIR/FLOAT.mnc
 
