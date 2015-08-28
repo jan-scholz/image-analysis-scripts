@@ -15,17 +15,20 @@
 #
 # jacob@diddl:/projects/souris/jacob/ITGB3/ITGB3_Images_Diff/bias_corr$ diffbias -v -i /projects/souris/jacob/Raw_Data/Current/cylindrical/water_phantom_cyl_lores/bias/coil01.mnc -m /projects/souris/jacob/Raw_Data/Current/cylindrical/water_phantom_cyl_lores/bias/coil01_mask.mnc  -d ../ITGB3_004.mnc -o test_corr.mnc
 #
+# /projects/mice/jacob/fid/11may14.fid
 
 # number of non-diffusion-weighted images at the beginning
-NB=5
+NB=5 # read from bvals file
 
 # b-value of non-diffusion-weighted images (NOT IMPLEMENTED!!!)
-NEWB=1917
+NEWBDEFAULT=1917 # read from bvals file
 
 
 usage () 
 {
 	echo "Usage: `basename $0` [-i ISO] [-d DATA]"
+	echo
+	echo "Requires 'bvals' file in present direcory. (Space-separated list, e.g.: 2000 2000 0 0 ...)"
 	echo
 	echo "  -i ISO         estimate diffusion gradient bias field from isotropic medium"
 	echo "  -m MASK        mask to restrict spline fit of the interpolation"
@@ -40,7 +43,8 @@ usage ()
 	echo "  -s S0DIST      [5 mm] smoothing distance factor for B0 interpolation"
 	echo "  -t B-DIST      [5 mm] smoothing distance factor for DW inhomogeneity interpolation"
 	echo
-	echo "  -B NEWB        b-value to normalize to (default: $NEWB)"
+	echo "  -B NEWB        b-value to normalize to (default: first b-value > 100 in 'bvals',"
+	echo "                  otherwise: $NEWBDEFAULT)"
 	echo "  -S SPLINEARGS  add spline_smooth parameters, eg \"-lambda 0.01\""
 	echo
 	echo "  -f             force reset (deletes previous split directories)"
@@ -141,22 +145,30 @@ b_estimate ()
 	mkdir -p $TDIR/{iso,b,tmp}
 
 	# mean S0 water, (non-diffusion-weighted signal)
-	minccalc -float -2 -quiet -clobber -expression "avg(A)" $ISODIR/vol0[0-$(($NB-1))].mnc $TDIR/iso/S0.mnc
+	##minccalc -float -2 -quiet -clobber -expression "avg(A)" $ISODIR/vol0[0-$(($NB-1))].mnc $TDIR/iso/S0.mnc
+	minccalc -float -2 -quiet -clobber -expression "avg(A)" `for f in $NODIFFS; do printf '%s/vol%s.mnc ' $ISODIR $f; done` $TDIR/iso/S0.mnc
 
 	# S0 water fitted, (non-diffusion-weighted signal)
 	spline_smooth -clobber -extrapolate -mask $MASK -distance $S0DIST $SPLINEARGS $TDIR/iso/S0.mnc $TDIR/iso/S0_est.mnc
 
 	[ -z "$VERBOSE" ] || echo "creating b-maps"
+
+	# non-diffusion-weighted volumes are set to 1
+	for i in $NODIFFS; do
+		minccalc -float -2 -quiet -clobber -expression "A[0]*0+1" $ISODIR/vol${i}.mnc $TDIR/b/vol${i}.mnc || exit 1
+		[ -z "$VERBOSE" ] || echo -n "$i "
+	done
+
 	N=`mincinfo -dimlength time $ISO`
 	for ((i=0;i<$N;i++)); do
 		j=`printf "%02g" ${i}`
 
 		# non-diffusion-weighted volumes are set to 1
-		if [ $i -lt $NB ]; then
-			minccalc -float -2 -quiet -clobber -expression "A[0]*0+1" $ISODIR/vol${j}.mnc $TDIR/b/vol${j}.mnc || exit 1
-			[ -z "$VERBOSE" ] || echo -n "o"
-			continue
-		fi
+#		if [ $i -lt $NB ]; then
+#			minccalc -float -2 -quiet -clobber -expression "A[0]*0+1" $ISODIR/vol${j}.mnc $TDIR/b/vol${j}.mnc || exit 1
+#			[ -z "$VERBOSE" ] || echo -n "o"
+#			continue
+#		fi
 
 		# S iso, fit bias for each diffusion-weighted volume, distance factor (dist)
 		spline_smooth -clobber -extrapolate -mask $MASK -distance $DIST $ISODIR/vol${j}.mnc $TDIR/iso/vol${j}_est.mnc
@@ -174,8 +186,8 @@ b_estimate ()
 
 	# save b-maps
 	if [ ! -z "$BOUT" ]; then
-		EXT="${BOUT#`remove_ext $BOUT`}"
-		if [  $EXT = ".nii.gz" ]; then
+		##EXT="${BOUT#`remove_ext $BOUT`}"
+		if [  `echo $BOUT | tail -c 8` = ".nii.gz" ]; then
 			nifti $BMAP $BOUT
 		else
 			cp $BMAP $BOUT
@@ -214,21 +226,28 @@ correct ()
 	MASK=$TDIR/corr/mask.mnc
 
 	# data S0 
-	minccalc -2 -quiet -clobber -expression "avg(A)" $DATADIR/vol0[0-$(($NB-1))].mnc $TDIR/corr/S0.mnc
+	##minccalc -2 -quiet -clobber -expression "avg(A)" $DATADIR/vol0[0-$(($NB-1))].mnc $TDIR/corr/S0.mnc
+	minccalc -2 -quiet -clobber -expression "avg(A)" `for f in $NODIFFS; do printf '%s/vol%s.mnc ' $DATADIR $f; done` $TDIR/corr/S0.mnc
 
 	# apply b-map
 	N=`mincinfo -dimlength time $DATA`
 	[ -z "$VERBOSE" ] || echo "applying b-map, normalize b-value to $NEWB"
 
+	# just copy non-diffusion-weighted volumes
+	for i in $NODIFFS; do
+		cp $DATADIR/vol${i}.mnc $TDIR/corr/vol${i}.mnc
+		[ -z "$VERBOSE" ] || echo -n "$i "
+	done
+
 	for ((i=0;i<$N;i++)); do
 		j=`printf "%02g" $i`
 
 		# just copy non-diffusion-weighted volumes
-		if [ $i -lt $NB ]; then
-			cp $DATADIR/vol${j}.mnc $TDIR/corr/vol${j}.mnc
-			[ -z "$VERBOSE" ] || echo -n "o"
-			continue
-		fi
+#		if [ $i -lt $NB ]; then
+#			cp $DATADIR/vol${j}.mnc $TDIR/corr/vol${j}.mnc
+#			[ -z "$VERBOSE" ] || echo -n "o"
+#			continue
+#		fi
 
 		# resample b-maps
 		# -keep_real_range leads to zero filled images
@@ -266,8 +285,9 @@ correct ()
 
 	# save corrected data
 	if [ ! -z "$OUT" ]; then
-		EXT="${OUT#`remove_ext $OUT`}"
-		if [  $EXT = ".nii.gz" ]; then
+		##EXT="${OUT#`remove_ext $OUT`}"
+		##if [  $EXT = ".nii.gz" ]; then
+		if [  `echo $OUT | tail -c 8` = ".nii.gz" ]; then
 			nifti $TDIR/corr/data.mnc $OUT
 		else
 			cp $TDIR/corr/data.mnc $OUT
@@ -281,7 +301,7 @@ correct ()
 # MAIN
 ###############################################################################
 
-while getopts i:m:d:o:b:c:s:t:B:S:fx:v opt
+while getopts i:m:d:o:b:c:s:t:B:S:fx:vy opt
 do
     case "$opt" in
       i)        ISO="$OPTARG";;
@@ -297,12 +317,30 @@ do
 	  f)     FRESET=1;;
       x)   DEBUGDIR="$OPTARG";;
       v)    VERBOSE=1;;
+      y)   OVERRIDE=1;;
       \?)  usage; exit 1;;
     esac
 done
 shift `expr $OPTIND - 1`
 
 [ -z "$ISO" -a -z "$DATA" ] && { usage; exit 1; }
+
+# use diffbias2 instead
+[ -z "$OVERRIDE" ] && { echo "ERROR: diffbias has been superseeded by diffbias2, use -y to use old version"; exit 1; }
+
+# volume numbers for weighted and unweighted volumes
+[ -f "bvals" ] || { echo "ERROR: 'bvals' file not found in present directory"; exit 1; }
+BLIST=(`cat bvals`)
+DIFFS=;NODIFFS=
+for i in `seq $((${#BLIST[*]}-1))`; do
+if [ "${BLIST[i]}" -lt 100 ]; then
+NODIFFS="$NODIFFS `printf '%02i' $i`"
+else
+DIFFS="$DIFFS `printf '%02i' $i`"
+[ -z "$NEWB" ] && { NEWB=${BLIST[i]}; echo "setting NEWB to: $NEWB"; }
+fi
+done
+[ -z "$NEWB" ] && NEWB=$NEWBDEFAULT
 
 [ -z "$TMPDIR" ] && { echo "ERROR: \$TMPDIR not set"; exit 1; }
 TDIR=$TMPDIR/$USER/$$
@@ -363,7 +401,8 @@ for n in 1 2 3; do
 	m=$((n-1))
 	t=`echo "${thr[$m]} * 0.7" | bc -l`
 
-	minccalc -2 -quiet -clobber -expression "avg(A)>${t}" water_c${n}/vol0[0-$((NB))].mnc water_c${n}_mask.mnc
+	##minccalc -2 -quiet -clobber -expression "avg(A)>${t}" water_c${n}/vol0[0-$((NB))].mnc water_c${n}_mask.mnc
+	minccalc -2 -quiet -clobber -expression "avg(A)>${t}" `for f in $NODIFFS; do printf '%s/vol%s.mnc ' water_c${n} $f; done` water_c${n}_mask.mnc
 	minccalc -2 -quiet -clobber -nocheck_dimensions -expression "A[0]*A[1]" water_c${n}_mask.mnc $BBOX tmp.mnc
 	mincmorph -clobber -successive EEEEE tmp.mnc water_c${n}_mask.mnc
 	rm tmp.mnc
