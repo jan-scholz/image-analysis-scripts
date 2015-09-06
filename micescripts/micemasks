@@ -14,16 +14,35 @@ usage ()
 	echo "  -n             convert atlas-spaced output to nifti format"
 	#echo "  -t TEMPLATE    the average, as a background for viewing"
 	echo "  -a ATLAS       labeled brain structures, used to generate the masks"
+	echo "  -A ALIGNATLAS  align this atlas using nlin4.xfm"
+	echo"                  (needs to be in the space of the original resampled_atlas.mnc)"
 }
 
 
-while getopts t:b:o:a:mnv opt
+resample_atlas ()
+{
+
+INATLAS=$1
+XFM=${MBMBASE}_resampled_atlas/nlin4.xfm
+
+[ -f "$XFM" ] || { echo "ERROR: could not find transformation: $XFM"; exit 1; }
+
+mincreshape -dimorder zspace,yspace,xspace $INATLAS $TDIR/atlas1.mnc
+
+echo mincresample -clobber -2 -like $TEMPLATE -nearest_neighbour -keep_real_range -transform $XFM $TDIR/atlas1.mnc ${OUTDIR}/atlas2.mnc
+
+}
+
+
+
+while getopts t:b:o:a:A:mnv opt
 do
     case "$opt" in
       b)  MBMBASE="${OPTARG}";;
       o)   OUTDIR="${OPTARG}";;
       #t) TEMPLATE="${OPTARG}";;
       a)    ATLAS="${OPTARG}";;
+      A) ALIGNATLAS="${OPTARG}";;
   	  m)  MASKING="lsq6";;
   	  n)    NIFTI=true;;
   	  v)  VERBOSE="-v";;
@@ -45,26 +64,30 @@ ATLAS=${ATLAS:-${MBMBASE}_resampled_atlas/resampled_atlas.mnc}
 [ -f "$ATLAS" ]    || { echo "ERROR: could not find atlas: $ATLAS"; exit 1; }
 
 
-TDIR=$TMPDIR/$$; mkdir -p $TDIR
+TDIR=$TMPDIR/$USER/$$; mkdir -p $TDIR
 trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
 
 
-autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
-mincmorph -clobber -successive 'B[0.5:999]DDDDDDEEEEEE' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
-#autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
-mincresample -clobber -nearest -like $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc
-#mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask.mnc -start 34,68,45 -count 172,340,225  # use this when -from takes the wron y-extent
+autocrop  -clobber -isoexpand 20% $ATLAS $TDIR/atlasmask.mnc
+mincmorph -clobber -successive 'B[0.5:999]DDDDDDEEEEEE' $TDIR/atlasmask.mnc $TDIR/atlasmask2.mnc
+#autocrop  -clobber -from $ATLAS $TDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+mincresample -clobber -nearest -like $ATLAS $TDIR/atlasmask2.mnc $OUTDIR/mask.mnc
+#mincreshape -clobber $TDIR/atlasmask2.mnc $OUTDIR/mask.mnc -start 34,68,45 -count 172,340,225  # use this when -from takes the wron y-extent
 
 
-autocrop  -clobber -isoexpand 20% $ATLAS $TMPDIR/atlasmask.mnc
-mincmorph -clobber -successive 'B[0.5:999]DDDDDD' $TMPDIR/atlasmask.mnc $TMPDIR/atlasmask2.mnc
-#autocrop  -clobber -from $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
-mincresample -clobber -nearest -like $ATLAS $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
-#mincreshape -clobber $TMPDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc -start 34,68,45 -count 172,340,225
+autocrop  -clobber -isoexpand 20% $ATLAS $TDIR/atlasmask.mnc
+mincmorph -clobber -successive 'B[0.5:999]DDDDDD' $TDIR/atlasmask.mnc $TDIR/atlasmask2.mnc
+#autocrop  -clobber -from $ATLAS $TDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+mincresample -clobber -nearest -like $ATLAS $TDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc
+#mincreshape -clobber $TDIR/atlasmask2.mnc $OUTDIR/mask_dil.mnc -start 34,68,45 -count 172,340,225
 
 
 cp ${VERBOSE} $ATLAS $OUTDIR/atlas.mnc
 cp ${VERBOSE} $TEMPLATE $OUTDIR/template.mnc
+
+
+
+[ -z "$ALIGNATLAS" ] || resample_atlas
 
 
 
@@ -86,4 +109,9 @@ if [ ! -z ${NIFTI} ]; then
 	done
 fi
 
+#echo $TDIR
+#read
+rm -rf $TDIR
+
+exit 0
 
