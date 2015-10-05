@@ -11,7 +11,8 @@ usage ()
 [ "$( tty )" = 'not a tty' ] || { usage; exit 1; }
 
 echo
-awk '{printf "%s%s,",$2,$3}' -
+#awk '{printf "%s%s,",$2,$3}' -
+sed 's/\(..\)\(...\)\(.*\)/\1 \2 \3/' - | awk '{printf "%s%s,",$2,$3}'
 echo
 echo
 
