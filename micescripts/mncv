@@ -8,6 +8,7 @@ usage ()
 	echo "  IMAGE            one or several images MINC or NIFTI"
 	echo
 	echo " -a FSLARG         append following argument to all images, e.g. \"-l Red-Yellow\""
+	echo " -w                wait for keypress before starting fslview"
 	echo " -v                verbose mode"
 }
 
@@ -25,10 +26,11 @@ cond_convert ()
 ###############################################################################
 
 
-while getopts a:v opt
+while getopts a:wv opt
 do
     case "$opt" in
       a)    GLOBALARG="${OPTARG}";;
+      w)    WAIT="1";;
       v)    VERBOSE="-v";;
       \?)  usage; exit 1;;
     esac
@@ -48,16 +50,20 @@ trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SI
 
 i=0
 for a in $@; do
+	GLOB=$GLOBALARG
 	if [ "${a##*.}" = "mnc" ]; then
 		g=$TDIR/`printf "%03i_%s" $i $(basename $a .mnc)`
 		cond_convert $a $g
-		ARGS="$ARGS $g $GLOBALARG"
+		[ "${a:0:8}" = "template" ] && GLOB=
+		ARGS="$ARGS $g $GLOB"
 		let i++
 	else
-		ARGS="$ARGS $a $GLOBALARG"
+		ARGS="$ARGS $a $GLOB"
 	fi
 done
 		
+echo fslview $ARGS
+[ -z "$WAIT" ] || { echo waiting for keypress; read; }
 fslview $ARGS
 
 
