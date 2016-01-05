@@ -13,7 +13,7 @@ BACKGROUND=black
 
 usage ()
 {
-	echo "Usage: `basename $0` [MINCPIKOPTIONS..] IMAGES.. [SLICEOPTIONS..]"
+	echo "Usage: `basename $0` [IMAGEMAGICK] [MINCPIKOPTIONS..] IMAGES.. [SLICEOPTIONS..]"
 	echo "  SLICEOPTIONS      more than one option and more than one slice number can be specified"
 	echo "                    if not specified 3 slices for each orientation will be created"
 	echo "     -axial    N..  (in % of total image dimension)"
@@ -24,6 +24,8 @@ usage ()
 	echo "     -scale  N          changes the size of the image, default $SCALE"
 	echo "     -border N          changes the width of the border, default $BORDER"
 	echo "     -background COLOR  changes the width of the border, default $BACKGROUND"
+	echo
+	echo "  IMAGEMAGICK       argument string passed on to 'convert', applied to each indivdual image"
 	echo
 	echo "  MINCPIKOPTIONS    adjust intensity ranges, e.g. -image_range MIN MAX"
 	echo
@@ -45,6 +47,11 @@ echo "<html><body>" > $REPORT
 
 PIKOPTS=
 while [ ! "${1: -4}" = ".mnc" -a ! -z "$1" ]; do
+	if [ "$1" = "-convert" ]; then
+		CONVERT=$2
+		shift 2
+		continue
+	fi
 	PIKOPTS="$PIKOPTS $1"; shift;
 done
 
@@ -99,6 +106,10 @@ for ARG in $@; do
 				esac
 				#echo "mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP"
 				mincpik -clobber $PIKOPTS $SLICE -slice $N -scale $SCALE $g $OUTDIR/$TMP || { echo "ERROR: mincpik"; exit 1; }
+				if [ ! -z "$CONVERT" ]; then
+					#echo "using convert: $CONVERT"
+					convert $OUTDIR/$TMP $CONVERT $OUTDIR/$TMP
+				fi
 				let j++
 			done
 			shift
