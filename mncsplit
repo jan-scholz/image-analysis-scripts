@@ -1,3 +1,6 @@
+#! /bin/bash
+# splits 4d file into single 3d volumes
+
 mincsplit ()
 {
         # mincsplit INPUT.MNC OUTDIR
