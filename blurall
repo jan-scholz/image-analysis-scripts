@@ -36,7 +36,7 @@ mkdir -p $VERBOSE $OUTDIR
 
 TDIR=$TMPDIR/$USER/$$
 mkdir -p $TDIR || { echo "ERROR: Could not create temp. dir. \$TDIR" > /dev/stderr; exit 1; }
-trap "{ rm -fr $TDIR; exit 255; }" EXIT
+trap "{ rm -fr $TDIR; exit 255; }" SIGINT SIGTERM
 
 
 for f in $@; do
@@ -45,4 +45,7 @@ for f in $@; do
 	mv $TDIR/`basename ${f%.mnc}`_blur.mnc $OUTDIR/`basename $f`
 	[ -z "$VERBOSE" ] || echo processed $f
 done
+
+rm -fr $TDIR
+exit 0
 
