@@ -42,13 +42,16 @@ if [ "`imtest $MASK`" = 1 ]; then
 	imcp $MASK $OUTDIR/stats/mean_FA_mask
 	fslswapdim $OUTDIR/stats/mean_FA_mask -x y z $OUTDIR/stats/mean_FA_mask_flip > /dev/null
 else
-	echo "Warning: could not find mask \"$MASK\", setting mask to the whole volume"
+	echo "Warning: could not find mask \"$MASK\", setting mask to include the whole volume"
 	fslmaths $ALL -Tmean -mul 0 -add $OUTDIR/stats/mean_FA_mask
 fi
 
 fslmaths $OUTDIR/stats/all_FA -mas   $OUTDIR/stats/mean_FA_mask $OUTDIR/stats/all_FA
 fslmaths $OUTDIR/stats/all_FA -Tmean $OUTDIR/stats/mean_FA
 
+
+##############################
+# copy warps?
 #fslsplit $OUTDIR/stats/all_FA $OUTDIR/vol -t
 ## rename
 #i=0
@@ -59,7 +62,7 @@ fslmaths $OUTDIR/stats/all_FA -Tmean $OUTDIR/stats/mean_FA
 #done
 
 
-
+##############################
 # tbss
 cd $OUTDIR/stats
 
@@ -79,10 +82,11 @@ distancemap -i mean_FA_skeleton_mask_dst -o mean_FA_skeleton_mask_dst
 fslmaths mean_FA -mul 0 empty_mask
 tbss_skeleton -i mean_FA -p $THRESH mean_FA_skeleton_mask_dst empty_mask all_FA all_FA_skeletonised
 
-( cd ../..; cp $@ $OUTDIR/stats; )
+# this needs testing
+#( cd ../..; cp $@ $OUTDIR/stats; )
 
-echo "randomise -i $OUTDIR/stats/all_FA -o $OUTDIR/stats/`basename ${1%.*}` -m $OUTDIR/stats/mean_FA_mask_flip -d $2 -t $1 -n 2000 -x"
-#echo "randomise -i all_FA_skeletonised -o tbss -m mean_FA_skeleton_mask -d design.mat -t design.con -n 500 --T2 -V"
+#echo "randomise -i $OUTDIR/stats/all_FA -o $OUTDIR/stats/`basename ${1%.*}` -m $OUTDIR/stats/mean_FA_mask_flip -d $2 -t $1 -n 2000 -x"
+##echo "randomise -i all_FA_skeletonised -o tbss -m mean_FA_skeleton_mask -d design.mat -t design.con -n 500 --T2 -V"
 
 cd -
 
