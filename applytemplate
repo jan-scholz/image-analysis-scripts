@@ -1,13 +1,17 @@
 #! /bin/bash
 # apply template2 transformations to other modalities
 #
-# applytemplate -o foo -O mean_FA -i NL02b m??_corr_FA.nii.gz
 
 
 usage ()
 {
 	echo "Usage: $(basename $0) -i INDIR -o OUTDIR FILES.."
-	echo
+	echo "  -i INDIR    directory containing transformations from template2"
+    echo "  -o OUTDIR   ouput directory"
+    echo "  FILES       input files to be transformed with transformations"
+    echo "              in INDIR"
+    echo
+    echo "  -O AVERAGE  output average for verification"
 }
 
 
