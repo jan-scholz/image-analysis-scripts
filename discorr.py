@@ -7,7 +7,7 @@
 #
 # -MR to CT transform
 #
-# Will determine the coil the mouse was scanned in 
+# Will determine the coil the mouse was scanned in
 # using the vnmr:coil entry in the MINC header
 
 # TODO:
@@ -20,12 +20,6 @@ import sys
 import os
 import optparse
 import subprocess
-#import argparse
-
-#/projects/mice/share/arch/linux-x86_64-eglibc2_11_1/bin/sge_batch -q bigmem.q,all.q -l vf=4G -J dc-4G-rot36_b0 mincresample -sinc -2 -transform /projects/mice/matthijs/distortion-correction-november-2007/coil3-phantom-16oct2007/coil3-mri-to-CAD-lsq6-nlin-extra-large-super-inverted-lsq6.xfm -like ../raw/rot03_b0.mnc ../raw/rot36_b0.mnc discorr/rot36_b0.november_2007_distortion_corrected.mnc
-
-
-
 
 
 basedir = "/projects/mice/matthijs/distortion-correction-november-2007/"
@@ -44,7 +38,7 @@ def validcoil(x):
 		coil = int(x)
 	except ValueError:
 		raise
-	
+
 	if not coil in range(1,17):
 		raise ValueError
 
@@ -64,7 +58,7 @@ def splitarg(a):
 		sys.exit(1)
 
 	return (filename, coil)
-	
+
 
 def getcoil(filename):
 	try:
@@ -103,12 +97,6 @@ def main():
 	p.add_option('--queues', '-q',                       dest="queues",        default='',        help="queues (default: any)")
 	p.add_option('--verbose', '-v', action="store_true", dest="verbose",       default=False,     help="Prints more information.")
 
-	#p = argparse.ArgumentParser(description='Distortion correction for insert coil')
-	#parser.add_argument('--output-dir', '-o', dest="outdir", default="discorr", help="output directory (default: discorr)")
-	#parser.add_argument('--verbose', '-v', action="store_true", dest="verbose", default=False, help="Prints more information.")
-	#parser.add_argument('mincfiles', metavar='file', type=string, nargs='+', help='MINC files to be distortion corrected')
-	#args = parser.parse_args()
-
 	options, arguments = p.parse_args()
 
 	if len(arguments) < 1:
@@ -120,141 +108,10 @@ def main():
 		(filename,coil) = splitarg(arg)
 		if coil == coil and getcoil(filename)[1] != coil:
 			print >> sys.stderr, 'WARNING: coil in file header "%s" does not match requested coil "%s"' % (getcoil(filename)[1],coil)
-		
+
 		print 'sge_batch', options.queues, '-l vf=4G -J dc-4G-rot36_b0 mincresample -2', options.interp, 'transform /projects/mice/matthijs/distortion-correction-november-2007/coil3-phantom-16oct2007/coil3-mri-to-CAD-lsq6-nlin-extra-large-super-inverted-lsq6.xfm -like ../raw/rot03_b0.mnc', filename, 'discorr/rot36_b0.november_2007_distortion_corrected.mnc'
 
 if __name__ == '__main__':
 	main()
 	sys.exit(0)
 
-
-
-#my $remove_registration = 0;
-#
-#      );
-#GetOptions(\@arg_table, \@ARGV, \@left_over_args) or die "\n";
-#
-#my @mice = @left_over_args;
-#
-##if the -output-dir was not used, but the first argument
-##is a directory, use this value to get the output directory
-#if(!$output_dir and -d $mice[0])
-#{
-#	$output_dir = shift @mice;
-#}
-#
-#if(!$output_dir)
-#{
-#	print "\n\nError: please specify an output directory.\n\n";
-#	die $usage;
-#}
-#
-#die $usage unless ($output_dir and $#mice >= 0);
-#
-#
-#
-## 1) Perform the correct transformation to the files
-##
-## The coil each file was scanned in is retrieved
-## from the vnmr:coil attribute in the MINC header. 
-#
-#RegisterPrograms(["mincinfo", "mincresample", "sge_batch"]);
-#system("mkdir -p $output_dir") unless (-d $output_dir);
-#
-#foreach my $mouse (@mice) 
-#{
-#	#check whether a coil number for this mouse was specified
-#	my @parts = split(":", $mouse);
-#	my $set_coil = undef;
-#	if($parts[1] == 1 or $parts[1] == 2 or $parts[1] == 3)
-#	{
-#		$set_coil = $parts[1];
-#		$mouse = $parts[0];
-#	}
-#	#if a coil was specified explicitly, but wasn't 1,2 or 3, exit:
-#	if($#parts == 1 and !$set_coil)
-#	{
-#		print "\n\nError: the specified coil number should be 1,2 or 3. Was $parts[1]\n\n";
-#		die;
-#	}
-#		
-#	my ($dir, $base, $ext) = split_path($mouse, 'last', [qw(gz z Z)]);	
-#	#at this point, $mouse should hold a minc file, verify this:
-#	if(!($ext eq '.mnc'))
-#	{
-#		print "\n\nError: $mouse is not a minc file\n\n";
-#		die;
-#	}
-#	my $output = $base;
-#	$output .= ".november_2007_distortion_corrected.mnc";
-#	$output = "${output_dir}/${output}";
-#	
-#	#transform options
-## 	my @resample_opts = ("mincresample", $resampling, "-2", "-use_input_sampling");
-#	my @resample_opts = ("mincresample", $resampling, "-2");
-#	push @resample_opts, "-clobber", if $Clobber;
-#	
-#	my $coil;
-#	
-#	if(!$set_coil)
-#	{
-#		eval
-#		{
-#			Spawn(["mincinfo", "-attval", "vnmr:coil", $mouse], stdout=>\${coil});
-#		};
-#		if($@)
-#		{
-#			die "\nError: the vnmr:coil entry for file $mouse must be 1, 2, or 3 (was: $coil )\n\n";
-#		}
-#			$coil =~ s/.*(\d).*/$1/;
-#	}
-#	else
-#	{
-#		$coil = $set_coil
-#	}
-#	
-#	if($coil == 1)
-#	{
-#		push @resample_opts, ("-transform", ${coil1_xfm}, "-like", ${coil1_likefile});
-#	}
-#	elsif($coil == 2)
-#	{
-#		push @resample_opts, ("-transform", ${coil2_xfm}, "-like", ${coil2_likefile});
-#	}
-#	elsif($coil == 3)
-#	{
-#		push @resample_opts, ("-transform", ${coil3_xfm}, "-like", ${coil3_likefile});
-#	}
-#	else
-#	{
-#		die "\nError: the vnmr:coil entry for file $mouse must be 1, 2, or 3 (was: $coil )\n\n";
-#	}
-#		
-#	push @resample_opts, ($mouse, $output);
-#	
-#	if($Execute) 
-#	{
-#    if(!$sge or $spawn) 
-#    {
-#      Spawn([@resample_opts]);
-#    }
-#    else 
-#    {
-#		if(!$print)
-#		{
-#			Spawn(["sge_batch", "-q", "bigmem.q,all.q", "-l", "vf=4G", "-J", "dc-4G-$base", @resample_opts]);
-#		}
-#		else
-#		{
-#			print join(" ",@resample_opts), "\n"
-#		}
-#    }
-# 	}
-#  else 
-#  {
-#    print "@resample_opts \n";
-#  }
-#}
-#
-#exit;
-#
