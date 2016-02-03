@@ -1,0 +1,110 @@
+#!/bin/bash
+# run variants of melodic and compare stats
+
+shopt -s expand_aliases
+alias parallel='/micehome/jlerch/linux-experimental/bin/parallel'
+
+FILTOPS="1,2,3"
+MELOPS="--bgthreshold=0 --dim=10"
+
+usage ()
+{
+	echo "Usage: $(basename $0) -i IN [-d MELDIR] [-o OUT -f FILTOPS -m MELOPS]"
+	echo "  -i IN           order: first subjects then directions"
+	echo "  -d MELDIR       pre-processed melodic directory"
+	echo "  -o OUT          output basename"
+	echo "  -f FILTOPS      clean up options (default: $FILTOPS)"
+	echo "  -m MELOPS       melodic options (default: $MELOPS)"
+	echo
+	echo "sge_batch -l vf=25G -q bigmem.q,all.q melodic -i melall --nobet --mask=mask_0-13 --report -v -o melall_0-13_mask_dimX"
+	echo "sge_batch -l vf=18G -q bigmem.q,all.q  meltest -i melall -d melall_0-13_mask -o melall_0-13_mask/comp2 -f 2"
+	echo " meltest melall_0-26 foo15810 1,5,8,10 "--mask=mean_0-26_mask --dim=10" &"
+}
+
+
+while getopts i:d:o:f:m:v opt
+do
+    case "$opt" in
+      i)       IN="$OPTARG";;
+      d)   MELDIR="$OPTARG";;
+      o)      OUT="$OPTARG";;
+      f)  FILTOPS="$OPTARG";;
+      m)   MELOPS="$OPTARG";;
+	  v)  VERBOSE=true;;
+      \?)  usage; exit 1;;
+    esac
+done
+shift `expr $OPTIND - 1`
+
+[ -z "$IN" ] && { usage; exit 1; }
+[ -z "$OUT" ] && OUT=`remove_ext $IN`_stats
+[ -f bvecs -a -f bvals ] || { echo "ERROR: Could not find bvecs or bvals in current directory"; exit 1; }
+[ "`imtest $IN`" = 0 ] && { echo "ERROR: Could not find IN $IN"; exit 1; }
+
+echo "processing $IN, saving to $OUT"
+
+
+TDIR=$TMPDIR/$USER/$$;
+mkdir -p $TDIR/melodic
+trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
+
+
+# run melodic
+if [ ! -d "$MELDIR" ] ; then
+	echo "running melodic with options: $MELOPS"
+	melodic -i $IN--nobet --report -o $TDIR/melodic $MELOPS
+fi
+
+
+# clean data
+[ -d "$MELDIR" ] && cp $MELDIR/melodic_mix $TDIR/melodic/melodic_mix
+[ -f "$TDIR/melodic/melodic_mix" ] || { echo "ERROR: Could not find melodic mix"; exit 1; }
+
+echo "removing component(s) $FILTOPS"
+fsl_regfilt -i $IN -o $TDIR/${IN}_clean -d $TDIR/melodic/melodic_mix -f $FILTOPS -v
+
+
+# split
+mkdir -p $TDIR/clean
+fslsplit $TDIR/${IN}_clean $TDIR/clean/vol -t
+
+
+# merge for each subject separately
+echo merge
+for i in `seq -w 0 15`; do
+	mkdir -p $TDIR/m$i
+	FILES=
+	for j in `seq -w $i 16 559`; do
+		FILES="$FILES `imglob $TDIR/clean/vol0${j}.nii.gz`"
+	done
+	echo fslmerge -t $TDIR/m$i/data $FILES
+done | parallel -j2
+
+
+# whole volume mask
+fslmaths $TDIR/clean/vol0000 -mul 0 -add 1 $TDIR/dtimask
+
+
+# dtifit
+echo dtifit
+for i in `seq -w 0 15`; do
+	echo "dtifit -k  $TDIR/m$i/data -m $TDIR/dtimask -o $TDIR/m${i}/dti -r bvecs -b bvals > /dev/null"
+done | parallel -j2
+
+
+# stats
+echo stats
+
+#for m in FA; do
+for m in FA L1 L2 L3 MD MO; do
+	echo modality $m
+	fslmerge -t $TDIR/all_${m} $TDIR/m??/dti_${m}.nii.gz
+	imcp $TDIR/all_${m} ${OUT}_all_${m}
+	fslmaths $TDIR/all_${m} -s 0.2 $TDIR/all_${m}
+	fsl_glm -m $TDIR/dtimask -i $TDIR/all_${m} -d design_grp.mat -c design_grp.con -o ${OUT}_${m} --out_z=${OUT}_${m}_ztest
+done
+
+
+rm -r $TDIR
+exit 0
+
