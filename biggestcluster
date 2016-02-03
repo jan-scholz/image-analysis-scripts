@@ -16,6 +16,7 @@ while getopts i:o:t:fv opt
 do
 	case "$opt" in
 		i)  IN="`imglob $OPTARG`";;
+		o)  OUT="$OPTARG";;
 		t)  THRESH="$OPTARG";;
 		f)  FILL=1;;
 		v)  VERBOSE=1;;
@@ -34,7 +35,6 @@ fslmaths $OUT -thr $N -bin $OUT
 
 
 # fill holes
-
 if [ "$FILL" = 1 ]; then
 	fslmaths $OUT -bin -mul -1 -add 1 $OUT
 	N=`cluster -i $OUT -t 1 -o $OUT | awk 'NR==2 {print $1}'`
