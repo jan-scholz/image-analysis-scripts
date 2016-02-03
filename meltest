@@ -45,7 +45,6 @@ echo "processing $IN, saving to $OUT"
 
 
 TDIR=$TMPDIR/$USER/$$;
-#TDIR=$TMPDIR/$USER/xxx
 mkdir -p $TDIR/melodic
 trap "{ rm -fr $TDIR; echo 'cleaned up temp. directory'; exit 255; }" SIGTERM SIGINT
 
@@ -63,7 +62,6 @@ fi
 
 echo "removing component(s) $FILTOPS"
 fsl_regfilt -i $IN -o $TDIR/${IN}_clean -d $TDIR/melodic/melodic_mix -f $FILTOPS -v
-#imcp $IN  $TDIR/${IN}_clean    # turn of regfilt and turn this on
 
 
 # split
