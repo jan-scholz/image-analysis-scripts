@@ -1,1 +1,30 @@
-date --date='1 days'
+#!/usr/bin/env python
+# calculate the days between two dates
+
+import sys
+from datetime import datetime
+from dateutil.parser import parse
+
+
+if len(sys.argv) < 2:
+    print('%s DATE [DATE2]' % (sys.argv[0],))
+    print('DATE2 is set to today if omitted')
+    sys.exit(0)
+
+date1 = parse(sys.argv[1])
+date2 = datetime.today()
+
+if len(sys.argv) > 2:
+    date2 = parse(sys.argv[2])
+
+
+datediff = (date2 - date1)
+
+print "%g day(s) between %s and %s." % (datediff.days,
+                                                date1.date(), date2.date())
+
+
+
+
+
+
