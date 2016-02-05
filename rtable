@@ -5,7 +5,10 @@
 
 usage () 
 {
-	echo "Usage: `basename $0` -i EVS -c COLUMN(S) FILENAMES"
+	echo "Usage: `basename $0` -i EVS -c COLUMN(S) FILENAME.."
+    echo "  -i TEXTFILE    each EV in a separte column"
+    echo "  -c COLUMNS     column numbers to select"
+    echo "FILENAME         image filenames"
 }
 
 
