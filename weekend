@@ -11,6 +11,9 @@ usage ()
 
 [ $# -lt 2 ] && { usage; exit 1; }
 
+
+[ `uname` = 'Linux' ] || { echo "ERROR: require linux version of 'date'"; exit 1; }
+
 SWITCHOVER="30 minutes"
 
 START="$1"; shift
@@ -22,8 +25,4 @@ for s in "$@"; do
 	echo "END:   $END"; echo
 	START=`date -d "$END + $SWITCHOVER"`
 done
-
-
-# weekend "friday 7am" "12 hours" "13 hours 30 minutes" "13 hours 30 minutes" "15 hours" "2 hours" "15 hours"
-
 
