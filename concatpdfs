@@ -4,7 +4,8 @@
 usage ()
 {
 	echo "Usage: $(basename $0) OUTPUT PDFFILE.."
-	echo "explanation"
+	echo "  OUTPUT   name of output file"
+    echo "  PDFFILE  two or more PDF files to be concatenated"
 }
 
 [ $# -lt 2 ] && { usage; exit 1; }
