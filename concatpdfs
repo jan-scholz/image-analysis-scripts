@@ -8,7 +8,7 @@ usage ()
     echo "  PDFFILE  two or more PDF files to be concatenated"
 }
 
-[ $# -lt 2 ] && { usage; exit 1; }
+[ $# -lt 3 ] && { usage; exit 1; }
 
 OUT=$1; shift
 
