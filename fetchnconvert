@@ -133,6 +133,3 @@ rm -f fid.* vol.*
 cd - > /dev/null
 exit 0
 
-#echo run the following command to archive
-#echo tar cvjf `basename $INDIR`.bz2 $INDIR
-
